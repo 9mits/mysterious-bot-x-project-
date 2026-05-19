@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from modules.legacy import (
+from modules.commands import (
     check_admin,
     check_owner,
     has_permission_capability,

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from modules.legacy import (
+from modules.commands import (
     brand_embed,
     format_log_quote,
     format_reason_value,

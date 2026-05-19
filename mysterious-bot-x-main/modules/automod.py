@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from modules.legacy import (
+from modules.commands import (
     automod_cmd,
     handle_native_automod_alert_message,
     handle_native_automod_execution,

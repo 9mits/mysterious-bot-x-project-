@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import discord
 
-from modules import legacy
+from modules import commands as legacy
 
 
 def make_interaction():

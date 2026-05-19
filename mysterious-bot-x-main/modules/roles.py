@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from modules.legacy import (
+from modules.commands import (
     RoleSettingsView,
     build_role_info_embed,
     build_role_landing_embed,

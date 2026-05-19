@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from modules.legacy import (
+from modules.commands import (
     ModmailControlView,
     ModmailPanelView,
     apply_modmail_ticket_state,
