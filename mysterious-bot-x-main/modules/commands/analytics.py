@@ -358,18 +358,18 @@ async def stats(interaction: discord.Interaction, target: Optional[discord.Membe
         cases = get_mod_cases(uid)
         
         # Check if user is currently staff or has history
-        is_staff_member = False
+        is_target_staff = False
         if target.guild_permissions.administrator:
-            is_staff_member = True
+            is_target_staff = True
         else:
             mod_role_ids = bot.data_manager.config.get("mod_roles", [])
             if mod_role_ids:
                 if any(r.id in mod_role_ids for r in target.roles):
-                    is_staff_member = True
+                    is_target_staff = True
             elif target.guild_permissions.moderate_members:
-                is_staff_member = True
+                is_target_staff = True
         
-        if not is_staff_member and not cases:
+        if not is_target_staff and not cases:
             await interaction.response.send_message(f"{target.mention} is not a staff member and has no recorded history.", ephemeral=True)
             return
 

@@ -248,43 +248,8 @@ from .config import (
     ConfigDashboardView,
     FeatureFlagView,
     SetupDashboardView,
-    build_setup_validation_embed,
 )
 
-class RuleEditModal(discord.ui.Modal, title="Add/Edit Punishment Rule"):
-    rule_name = discord.ui.TextInput(label="Rule Name", placeholder="e.g. Spamming", max_length=50)
-    base_dur = discord.ui.TextInput(label="Base Duration (mins)", placeholder="0=Warn, -1=Ban", max_length=10)
-    esc_dur = discord.ui.TextInput(label="Escalated Duration (mins)", placeholder="Repeat offense duration", max_length=10)
-
-    async def on_submit(self, interaction: discord.Interaction):
-        name = self.rule_name.value.strip()
-        if not name:
-            await interaction.response.send_message("Rule name cannot be empty.", ephemeral=True)
-            return
-            
-        # Use parse_duration_str to allow "ban", "1d", "30m" etc.
-        base = parse_duration_str(self.base_dur.value.strip())
-        esc = parse_duration_str(self.esc_dur.value.strip())
-            
-        rules = bot.data_manager.config.get("punishment_rules", DEFAULT_RULES)
-        rules[name] = {"base": base, "escalated": esc}
-        bot.data_manager.config["punishment_rules"] = rules
-        await bot.data_manager.save_config()
-        
-        # Log
-        log_embed = make_embed(
-            "Punishment Rule Updated",
-            "> An escalation rule was created or overwritten from the rules dashboard.",
-            kind="info",
-            scope=SCOPE_SYSTEM,
-            guild=interaction.guild,
-        )
-        log_embed.add_field(name="Actor", value=format_user_ref(interaction.user), inline=True)
-        log_embed.add_field(name="Rule", value=name, inline=True)
-        log_embed.add_field(name="Values", value=f"> Base: {base}m\n> Escalated: {esc}m", inline=True)
-        await send_log(interaction.guild, log_embed)
-        
-        await interaction.response.send_message(f"Rule **{name}** saved successfully.", ephemeral=True)
 
 class ActiveSelect(discord.ui.Select):
     def __init__(self, active_list):
@@ -355,55 +320,7 @@ class ActiveSelect(discord.ui.Select):
 
         await interaction.response.edit_message(embed=embed, view=self.view)
 
-class ActiveView(discord.ui.View):
-    def __init__(self, active_list):
-        super().__init__(timeout=180)
-        self.add_item(ActiveSelect(active_list))
 
-class AccessView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)
-
-    @discord.ui.select(cls=discord.ui.RoleSelect, placeholder="Select a role to toggle access...", min_values=1, max_values=1)
-    async def select_role(self, interaction: discord.Interaction, select: discord.ui.RoleSelect):
-        role = select.values[0]
-        rid = role.id
-        mod_roles = bot.data_manager.config.get("mod_roles", [])
-        
-        if rid in mod_roles:
-            mod_roles.remove(rid)
-            action = "removed from"
-        else:
-            mod_roles.append(rid)
-            action = "added to"
-            
-        bot.data_manager.config["mod_roles"] = mod_roles
-        await bot.data_manager.save_config()
-        
-        # Log
-        log_embed = make_embed(
-            "Moderator Access Updated",
-            "> The list of roles with moderation access was changed.",
-            kind="info",
-            scope=SCOPE_SYSTEM,
-            guild=interaction.guild,
-        )
-        log_embed.add_field(name="Actor", value=format_user_ref(interaction.user), inline=True)
-        log_embed.add_field(name="Role", value=f"{role.mention} (`{role.id}`)", inline=True)
-        log_embed.add_field(name="Action", value=action.capitalize(), inline=True)
-        await send_log(interaction.guild, log_embed)
-        
-        mentions = [f"<@&{r}>" for r in mod_roles]
-        desc = "**Allowed Mod Roles:**\n" + ", ".join(mentions) if mentions else "No specific roles configured (Admins & Mods allowed)."
-        
-        if interaction.message:
-            embed = interaction.message.embeds[0]
-            embed.description = f"> {desc}"
-            await interaction.response.edit_message(embed=embed, view=self)
-        else:
-            await interaction.response.edit_message(view=self)
-            
-        await interaction.followup.send(f"Role {role.mention} {action} mod access.", ephemeral=True)
 
 class RuleDeleteSelect(discord.ui.Select):
     def __init__(self):
@@ -441,10 +358,6 @@ class RuleDeleteSelect(discord.ui.Select):
         else:
             await interaction.response.send_message("Rule not found.", ephemeral=True)
 
-class RuleDeleteView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=60)
-        self.add_item(RuleDeleteSelect())
 
 class RuleSelectForEdit(discord.ui.Select):
     def __init__(self):
@@ -480,10 +393,6 @@ class RuleSelectForEdit(discord.ui.Select):
         else:
             await interaction.response.send_message("Rule not found.", ephemeral=True)
 
-class RuleSelectView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=60)
-        self.add_item(RuleSelectForEdit())
 
 
 class ArchiveConfirmView(discord.ui.View):
@@ -621,42 +530,6 @@ class CloneConfirmView(discord.ui.View):
         await interaction.response.edit_message(content="Clone operation cancelled.", view=None)
         self.stop()
 
-class RulesDashboardView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)
-
-    @discord.ui.button(label="List Rules", style=discord.ButtonStyle.primary)
-    async def list_rules(self, interaction: discord.Interaction, button: discord.ui.Button):
-        rules = bot.data_manager.config.get("punishment_rules", DEFAULT_RULES)
-        lines = []
-        for name, data in rules.items():
-            b = format_duration(data['base'])
-            e = format_duration(data['escalated'])
-            lines.append(f"**{name}**: {b} -> {e}")
-
-        embed = make_embed(
-            "Punishment Rules",
-            "> Current automated escalation baselines used by the moderation console.",
-            kind="info",
-            scope=SCOPE_MODERATION,
-            guild=interaction.guild,
-        )
-        embed.add_field(name="Configured Rules", value=truncate_text("\n".join(lines) or "No rules configured.", 4000), inline=False)
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-
-    @discord.ui.button(label="Add Rule", style=discord.ButtonStyle.success)
-    async def add_rule(self, interaction: discord.Interaction, button: discord.ui.Button):
-        modal = RuleEditModal()
-        modal.title = "Add New Rule"
-        await interaction.response.send_modal(modal)
-
-    @discord.ui.button(label="Edit Rule", style=discord.ButtonStyle.secondary)
-    async def edit_rule(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_message("Select rule to edit:", view=RuleSelectView(), ephemeral=True)
-
-    @discord.ui.button(label="Delete Rule", style=discord.ButtonStyle.danger)
-    async def delete_rule(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_message("Select rule to delete:", view=RuleDeleteView(), ephemeral=True)
 
 
 def build_test_env_embed():
@@ -2095,13 +1968,13 @@ async def on_message(message: discord.Message):
     if (has_everyone or has_role) and not is_immune:
         # Only apply to staff (Admins/Mods) as requested
         mod_roles_ids = bot.data_manager.config.get("mod_roles", [])
-        is_staff_member = False
+        is_author_staff = False
         if any(r.id in mod_roles_ids for r in message.author.roles):
-            is_staff_member = True
+            is_author_staff = True
         elif message.author.guild_permissions.administrator:
-            is_staff_member = True
+            is_author_staff = True
             
-        if is_staff_member:
+        if is_author_staff:
             now = time.time()
             q = abuse_system.mention_spam_tracker[message.author.id]
             q.append(now)

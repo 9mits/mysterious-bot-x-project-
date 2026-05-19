@@ -247,10 +247,6 @@ class ModmailDiscussionThreadSelect(discord.ui.Select):
         await interaction.response.edit_message(embed=build_modmail_settings_embed(interaction.guild), view=ModmailSettingsView())
 
 
-class ModmailSettingsView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=180)
-        self.add_item(ModmailDiscussionThreadSelect())
 
 class FeatureFlagSelect(discord.ui.Select):
     def __init__(self):
