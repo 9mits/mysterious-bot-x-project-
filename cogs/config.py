@@ -9,7 +9,6 @@ from typing import Optional
 import io
 
 from core.constants import (
-    SCOPE_SUPPORT,
     SCOPE_SYSTEM,
 )
 from core.services import (
@@ -24,19 +23,12 @@ from .shared import (
     make_confirmation_embed,
     respond_with_error,
     build_setup_dashboard_embed,
-    build_modmail_settings_embed,
     build_config_dashboard_embed,
-    build_feature_flags_embed,
     build_escalation_matrix_embed,
-    build_canned_replies_embed,
     build_setup_validation_embed,
     check_admin,
 )
-from .cases import get_feature_flag_name
-class ModmailSettingsView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=300)
-        self.add_item(ModmailDiscussionThreadSelect())
+
 
 class ConfigRoleSelect(discord.ui.RoleSelect):
     def __init__(self, config_key: str, config_name: str):
@@ -49,20 +41,6 @@ class ConfigRoleSelect(discord.ui.RoleSelect):
         bot.data_manager.config[self.config_key] = role.id
         await bot.data_manager.save_config()
         await interaction.response.send_message(f"✅ **{self.config_name}** updated to {role.mention}", ephemeral=True)
-
-class MultiConfigRoleSelect(discord.ui.RoleSelect):
-    def __init__(self, config_key: str, config_name: str):
-        super().__init__(placeholder=f"Select {config_name}...", min_values=1, max_values=25)
-        self.config_key = config_key
-        self.config_name = config_name
-
-    async def callback(self, interaction: discord.Interaction):
-        roles = self.values
-        role_ids = [r.id for r in roles]
-        bot.data_manager.config[self.config_key] = role_ids
-        await bot.data_manager.save_config()
-        mentions = ", ".join([r.mention for r in roles])
-        await interaction.response.send_message(f"✅ **{self.config_name}** updated to: {mentions}", ephemeral=True)
 
 class ConfigChannelSelect(discord.ui.ChannelSelect):
     def __init__(self, config_key: str, config_name: str, channel_types=None):
@@ -77,17 +55,7 @@ class ConfigChannelSelect(discord.ui.ChannelSelect):
         if self.config_key == "general_log_channel_id":
             bot.data_manager.config["log_channel_id"] = channel.id
         await bot.data_manager.save_config()
-        
-        if self.config_key == "modmail_panel_channel":
-            await interaction.response.defer(ephemeral=True)
-            try:
-                from .shared import send_modmail_panel_message
-                await send_modmail_panel_message(channel, interaction.guild)
-                await interaction.followup.send(f"✅ **{self.config_name}** updated to {channel.mention} and panel sent.", ephemeral=True)
-            except Exception as e:
-                await interaction.followup.send(f"✅ **{self.config_name}** updated to {channel.mention}, but failed to send panel: {e}", ephemeral=True)
-        else:
-            await interaction.response.send_message(f"✅ **{self.config_name}** updated to {channel.mention}", ephemeral=True)
+        await interaction.response.send_message(f"✅ **{self.config_name}** updated to {channel.mention}", ephemeral=True)
 
 class ConfigTypeSelect(discord.ui.Select):
     def __init__(self, category: str, *, row: Optional[int] = None):
@@ -100,7 +68,6 @@ class ConfigTypeSelect(discord.ui.Select):
                 discord.SelectOption(label="Mod Role", value="role_mod", description="Moderator access role."),
                 discord.SelectOption(label="Community Manager", value="role_community_manager", description="Community manager access role."),
                 discord.SelectOption(label="Anchor Role", value="role_anchor", description="Placement anchor for custom roles."),
-                discord.SelectOption(label="Modmail Ping Roles", value="modmail_ping_roles", description="Roles pinged when a new ticket opens."),
             ]
         elif category == "channels":
             options = [
@@ -110,9 +77,6 @@ class ConfigTypeSelect(discord.ui.Select):
                 discord.SelectOption(label="AutoMod Log Channel", value="automod_log_channel_id", description="Where AutoMod bridge events should be logged."),
                 discord.SelectOption(label="AutoMod Report Channel", value="automod_report_channel_id", description="Where user AutoMod reports should be sent."),
                 discord.SelectOption(label="Archive Category", value="category_archive", description="Category for archive or storage channels."),
-                discord.SelectOption(label="Modmail Inbox", value="modmail_inbox_channel", description="Channel where ticket threads are created."),
-                discord.SelectOption(label="Modmail Logs", value="modmail_action_log_channel", description="Channel for modmail action updates."),
-                discord.SelectOption(label="Modmail Panel Location", value="modmail_panel_channel", description="Where the public modmail panel is posted."),
             ]
         super().__init__(
             placeholder=f"Select {category[:-1]} to configure...",
@@ -128,10 +92,7 @@ class ConfigTypeSelect(discord.ui.Select):
         
         view = discord.ui.View()
         if self.category == "roles":
-            if key == "modmail_ping_roles":
-                view.add_item(MultiConfigRoleSelect(key, name))
-            else:
-                view.add_item(ConfigRoleSelect(key, name))
+            view.add_item(ConfigRoleSelect(key, name))
         elif self.category == "channels":
             c_types = [discord.ChannelType.text]
             if "category" in key:
@@ -139,64 +100,6 @@ class ConfigTypeSelect(discord.ui.Select):
             view.add_item(ConfigChannelSelect(key, name, channel_types=c_types))
             
         await interaction.response.send_message(f"Select the new **{name}** below:", view=view, ephemeral=True)
-
-class ModmailDiscussionThreadSelect(discord.ui.Select):
-    def __init__(self):
-        enabled = bot.data_manager.config.get("modmail_discussion_threads", True)
-        options = [
-            discord.SelectOption(
-                label="Discussion Threads On",
-                value="on",
-                description="Create a separate internal discussion thread for each ticket.",
-                default=enabled,
-            ),
-            discord.SelectOption(
-                label="Discussion Threads Off",
-                value="off",
-                description="Keep only the main ticket thread without the extra staff discussion thread.",
-                default=not enabled,
-            ),
-        ]
-        super().__init__(
-            placeholder="Choose the ticket discussion thread behavior...",
-            min_values=1,
-            max_values=1,
-            options=options,
-        )
-
-    async def callback(self, interaction: discord.Interaction):
-        bot.data_manager.config["modmail_discussion_threads"] = self.values[0] == "on"
-        await bot.data_manager.save_config()
-        await interaction.response.edit_message(embed=build_modmail_settings_embed(interaction.guild), view=ModmailSettingsView())
-
-
-
-class FeatureFlagSelect(discord.ui.Select):
-    def __init__(self):
-        options = []
-        for key, enabled in sorted(bot.data_manager.config.get("feature_flags", {}).items()):
-            options.append(
-                discord.SelectOption(
-                    label=get_feature_flag_name(key),
-                    value=key,
-                    description=f"Currently {'on' if enabled else 'off'}",
-                )
-            )
-        super().__init__(placeholder="Choose a feature to turn on or off...", min_values=1, max_values=1, options=options)
-
-    async def callback(self, interaction: discord.Interaction):
-        key = self.values[0]
-        flags = bot.data_manager.config.setdefault("feature_flags", {})
-        flags[key] = not bool(flags.get(key, False))
-        await bot.data_manager.save_config()
-        await interaction.response.edit_message(embed=build_feature_flags_embed(interaction.guild), view=FeatureFlagView())
-
-
-class FeatureFlagView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=180)
-        self.add_item(FeatureFlagSelect())
-
 
 class EscalationMatrixModal(discord.ui.Modal, title="Edit Punishment Scaling"):
     matrix_json = discord.ui.TextInput(
@@ -247,40 +150,11 @@ class EscalationMatrixView(discord.ui.View):
         await interaction.response.edit_message(embed=build_escalation_matrix_embed(interaction.guild), view=self)
 
 
-class CannedReplyModal(discord.ui.Modal, title="Save Quick Reply"):
-    template_name = discord.ui.TextInput(label="Template Name", placeholder="Acknowledged", max_length=60)
-    reply_body = discord.ui.TextInput(label="Reply Body", style=discord.TextStyle.paragraph, max_length=1000)
-
-    async def on_submit(self, interaction: discord.Interaction):
-        replies = bot.data_manager.config.setdefault("modmail_canned_replies", {})
-        replies[self.template_name.value.strip()] = self.reply_body.value.strip()
-        await bot.data_manager.save_config()
-        await interaction.response.send_message(
-            embed=make_confirmation_embed(
-                "Quick Reply Saved",
-                "> The saved reply is now available in modmail.",
-                scope=SCOPE_SUPPORT,
-                guild=interaction.guild,
-            ),
-            ephemeral=True,
-        )
-
-
-class CannedRepliesView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=180)
-
-    @discord.ui.button(label="Add or Update Saved Reply", style=discord.ButtonStyle.primary)
-    async def add_reply(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(CannedReplyModal())
-
-
-
 class ConfigImportModal(discord.ui.Modal, title="Paste Settings Backup"):
     config_json = discord.ui.TextInput(
         label="Settings JSON",
         style=discord.TextStyle.paragraph,
-        placeholder='{"feature_flags": {...}}',
+        placeholder='{"role_mod": 1234567890, "punishment_log_channel_id": 1234567890}',
         required=True,
         max_length=4000,
     )
@@ -312,9 +186,7 @@ class ConfigDashboardActionSelect(discord.ui.Select):
         options = [
             discord.SelectOption(label="Download Settings", value="export", description="Export a safe JSON backup of the current settings."),
             discord.SelectOption(label="Paste Settings", value="import", description="Import a settings backup from raw JSON."),
-            discord.SelectOption(label="Feature Toggles", value="features", description="Turn bot features on or off."),
             discord.SelectOption(label="Punishment Scaling", value="scaling", description="Edit the escalation matrix used by punishments."),
-            discord.SelectOption(label="Saved Replies", value="replies", description="Manage canned replies used in modmail."),
         ]
         super().__init__(
             placeholder="Choose a settings action...",
@@ -343,14 +215,9 @@ class ConfigDashboardActionSelect(discord.ui.Select):
         if action == "import":
             await interaction.response.send_modal(ConfigImportModal())
             return
-        if action == "features":
-            await interaction.response.send_message(embed=build_feature_flags_embed(interaction.guild), view=FeatureFlagView(), ephemeral=True)
-            return
         if action == "scaling":
             await interaction.response.send_message(embed=build_escalation_matrix_embed(interaction.guild), view=EscalationMatrixView(), ephemeral=True)
             return
-        if action == "replies":
-            await interaction.response.send_message(embed=build_canned_replies_embed(interaction.guild), view=CannedRepliesView(), ephemeral=True)
 
 
 class ConfigDashboardView(discord.ui.View):
@@ -378,7 +245,6 @@ class GuildIdModal(discord.ui.Modal, title="Set Guild ID"):
 class SetupDashboardActionSelect(discord.ui.Select):
     def __init__(self):
         options = [
-            discord.SelectOption(label="Modmail Settings", value="modmail", description="Open the modmail behavior controls."),
             discord.SelectOption(label="Set Guild ID", value="guild_id", description="Change the guild ID used by the bot."),
             discord.SelectOption(label="Validate Setup", value="validate", description="Run the configuration validation checks."),
         ]
@@ -392,13 +258,6 @@ class SetupDashboardActionSelect(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         action = self.values[0]
-        if action == "modmail":
-            await interaction.response.send_message(
-                embed=build_modmail_settings_embed(interaction.guild),
-                view=ModmailSettingsView(),
-                ephemeral=True,
-            )
-            return
         if action == "guild_id":
             await interaction.response.send_modal(GuildIdModal(interaction.guild.id))
             return
@@ -422,14 +281,14 @@ class SetupDashboardView(discord.ui.View):
         self.add_item(SetupDashboardActionSelect())
 
 
-@tree.command(name="setup", description="Open the server configuration panel")
+@tree.command(name="setup", description="Configure server roles and channels.")
 @app_commands.default_permissions(administrator=True)
 @app_commands.check(check_admin)
 async def setup_slash(interaction: discord.Interaction):
     embed = build_setup_dashboard_embed(interaction.guild)
     await interaction.response.send_message(embed=embed, view=SetupDashboardView(), ephemeral=True)
 
-@tree.command(name="config", description="Open the bot settings panel")
+@tree.command(name="config", description="Manage bot settings and backups.")
 @app_commands.default_permissions(administrator=True)
 @app_commands.check(check_admin)
 async def config_cmd(interaction: discord.Interaction):

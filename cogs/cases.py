@@ -727,15 +727,14 @@ def build_mod_help_embed(guild: discord.Guild) -> discord.Embed:
             "`/case` — Open a case panel for notes, status, evidence, and assignment.",
             "`/history` — Browse a user’s disciplinary record case-by-case.",
             "`/active` — View all active bans and timeouts.",
-            "`/undopunish` — Reverse a punishment with a reason and case selector.",
+            "`/undo` — Reverse a punishment with a reason and case selector.",
         ]),
         inline=False,
     )
     embed.add_field(
         name="Actions",
         value="\n".join([
-            "`/punish` — Open the sanction console with smart escalation.",
-            "`/publicpunish` — Punish and post the result publicly in the channel.",
+            "`/punish` — Open the sanction console with smart escalation and optional public posting.",
             "`/purge` — Bulk-delete messages with user or keyword filtering.",
         ]),
         inline=False,

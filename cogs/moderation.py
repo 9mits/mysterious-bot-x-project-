@@ -709,28 +709,22 @@ def _staff_check(interaction: discord.Interaction) -> bool:
     return is_staff(interaction)
 
 
-@tree.command(name="punish", description="Sanction a user with a warning, timeout, or ban")
+@tree.command(name="punish", description="Open the moderation action panel.")
+@app_commands.describe(public="Send the result to this channel.")
 @app_commands.default_permissions(moderate_members=True)
 @app_commands.check(_staff_check)
-async def punish(interaction: discord.Interaction, user: discord.User):
-    await show_punish_menu(interaction, user)
+async def punish(interaction: discord.Interaction, user: discord.User, public: bool = False):
+    await show_punish_menu(interaction, user, public=public)
 
 
-@tree.command(name="publicpunish", description="Punish a user and announce it publicly in this channel")
-@app_commands.default_permissions(moderate_members=True)
-@app_commands.check(_staff_check)
-async def publicpunish(interaction: discord.Interaction, user: discord.User):
-    await show_punish_menu(interaction, user, public=True)
-
-
-@tree.command(name="history", description="Retrieve the complete disciplinary history of a user")
+@tree.command(name="history", description="View a user's moderation history.")
 @app_commands.default_permissions(moderate_members=True)
 @app_commands.check(_staff_check)
 async def history(interaction: discord.Interaction, user: discord.Member):
     await show_history_menu(interaction, user)
 
 
-@tree.command(name="active", description="Display a list of all currently active punishments")
+@tree.command(name="active", description="View active bans and timeouts.")
 @app_commands.default_permissions(moderate_members=True)
 @app_commands.check(_staff_check)
 async def active(interaction: discord.Interaction):
@@ -766,16 +760,16 @@ async def active(interaction: discord.Interaction):
     await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
 
-@tree.command(name="undopunish", description="Open the punishment undo control panel")
-@app_commands.describe(reason="Optional reason to prefill in the undo panel")
+@tree.command(name="undo", description="Reverse a logged moderation action.")
+@app_commands.describe(reason="Reason to prefill in the undo panel.")
 @app_commands.default_permissions(moderate_members=True)
 @app_commands.check(_staff_check)
-async def undopunish(interaction: discord.Interaction, user: discord.Member, reason: Optional[str] = None):
+async def undo(interaction: discord.Interaction, user: discord.Member, reason: Optional[str] = None):
     await show_history_menu(interaction, user, mode="undo", initial_undo_reason=reason)
 
 
-@tree.command(name="purge", description="Bulk delete messages, optionally filtered by user or keyword")
-@app_commands.describe(amount="Messages to check/delete (max 999)", user="Optional: Target specific user", keyword="Optional: Filter by keyword")
+@tree.command(name="purge", description="Delete recent messages with optional filters.")
+@app_commands.describe(amount="Messages to scan or delete. Max 999.", user="Only delete messages from this user.", keyword="Only delete messages containing this text.")
 @app_commands.default_permissions(manage_messages=True)
 @app_commands.check(_staff_check)
 async def purge(interaction: discord.Interaction, amount: int, user: discord.Member = None, keyword: str = None):
@@ -867,7 +861,7 @@ async def purge(interaction: discord.Interaction, amount: int, user: discord.Mem
     await send_punishment_log(interaction.guild, log_embed)
 
 
-@tree.command(name="lock", description="Restrict message sending permissions in this channel")
+@tree.command(name="lock", description="Lock the current channel.")
 @app_commands.default_permissions(manage_channels=True)
 @app_commands.check(_staff_check)
 async def lock(interaction: discord.Interaction):
@@ -894,7 +888,7 @@ async def lock(interaction: discord.Interaction):
         await interaction.followup.send(f"Error: {e}", ephemeral=True)
 
 
-@tree.command(name="unlock", description="Restore message sending permissions in this channel")
+@tree.command(name="unlock", description="Unlock the current channel.")
 @app_commands.default_permissions(manage_channels=True)
 @app_commands.check(_staff_check)
 async def unlock(interaction: discord.Interaction):
@@ -919,14 +913,14 @@ async def unlock(interaction: discord.Interaction):
         await interaction.followup.send(f"Error: {e}", ephemeral=True)
 
 
-@tree.command(name="help", description="View the moderation command guide")
+@tree.command(name="mod-guide", description="View the moderation command guide.")
 async def mod_help(interaction: discord.Interaction):
     embed = build_mod_help_embed(interaction.guild)
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
-@tree.command(name="case", description="Open the case panel for a user or case ID")
-@app_commands.describe(case_id="Open a specific case by ID", user="Open the most recent case for a user")
+@tree.command(name="case", description="Open a moderation case.")
+@app_commands.describe(case_id="Case ID to open.", user="User whose latest case should open.")
 @app_commands.check(_staff_check)
 async def case(interaction: discord.Interaction, case_id: Optional[app_commands.Range[int, 1, 999999]] = None, user: Optional[discord.Member] = None):
     await show_case_panel(interaction, case_id=case_id, user=user)
@@ -941,7 +935,7 @@ async def punish_context(interaction: discord.Interaction, user: discord.User):
     await show_punish_menu(interaction, user)
 
 
-@tree.context_menu(name="Mod History")
+@tree.context_menu(name="Moderation History")
 @app_commands.default_permissions(moderate_members=True)
 async def history_context(interaction: discord.Interaction, user: discord.Member):
     if not is_staff(interaction):
@@ -959,10 +953,9 @@ class ModerationCog(commands.Cog):
 async def setup(bot):
     await bot.add_cog(ModerationCog(bot))
     bot.tree.add_command(punish)
-    bot.tree.add_command(publicpunish)
     bot.tree.add_command(history)
     bot.tree.add_command(active)
-    bot.tree.add_command(undopunish)
+    bot.tree.add_command(undo)
     bot.tree.add_command(purge)
     bot.tree.add_command(lock)
     bot.tree.add_command(unlock)

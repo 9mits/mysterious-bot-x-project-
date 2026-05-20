@@ -575,7 +575,7 @@ def check_admin(interaction: discord.Interaction) -> bool:
 def check_owner(interaction: discord.Interaction) -> bool:
     return has_permission_capability(interaction, "owner_panel")
 
-@tree.command(name="listcommands", description="List all registered application commands")
+@tree.command(name="commands", description="View registered slash commands.")
 async def list_commands(interaction: discord.Interaction):
     # Owner/Admin only
     conf = bot.data_manager.config
@@ -627,7 +627,7 @@ async def internals(interaction: discord.Interaction):
     embed.add_field(name="Current Role Configuration", value=f">>> {roles_info}", inline=False)
     
     mod_commands = [
-        "/punish", "/history", "/active", "/undopunish",
+        "/punish", "/history", "/active", "/undo",
         "/lock", "/unlock", "/purge"
     ]
     mod_cmds_fmt = "\n".join(mod_commands)
@@ -639,7 +639,7 @@ async def internals(interaction: discord.Interaction):
     
     await interaction.followup.send(embed=embed, ephemeral=True)
 
-@tree.command(name="archive", description="Move this channel to the archive category")
+@tree.command(name="archive", description="Archive the current channel.")
 @app_commands.default_permissions(administrator=True)
 @app_commands.check(check_admin)
 async def archive(interaction: discord.Interaction):
@@ -676,7 +676,7 @@ async def archive(interaction: discord.Interaction):
     view = ArchiveConfirmView(channel, target_cat, old_name, new_name, overwrites_data, final_overwrites)
     await interaction.response.send_message(f"Are you sure you want to archive **{channel.name}**?", view=view, ephemeral=True)
 
-@tree.command(name="unarchive", description="Restore this channel from the archives")
+@tree.command(name="unarchive", description="Restore an archived channel.")
 @app_commands.default_permissions(administrator=True)
 @app_commands.check(check_admin)
 async def unarchive(interaction: discord.Interaction):
@@ -747,7 +747,7 @@ async def unarchive(interaction: discord.Interaction):
     log_embed.add_field(name="Restored Name", value=new_name, inline=True)
     await send_log(interaction.guild, log_embed)
 
-@tree.command(name="clone", description="Archive the current channel and create a fresh clone")
+@tree.command(name="clone", description="Archive this channel and create a replacement.")
 @app_commands.default_permissions(administrator=True)
 @app_commands.check(check_admin)
 async def clone(interaction: discord.Interaction):
@@ -781,13 +781,13 @@ async def clone(interaction: discord.Interaction):
     view = CloneConfirmView(channel, target_cat, old_name, new_name, overwrites_data, final_overwrites)
     await interaction.response.send_message(f"**WARNING:** This will archive **{channel.name}** and create a fresh clone.\nAre you sure?", view=view, ephemeral=True)
 
-@tree.command(name="rules", description="Configure automated punishment escalation rules")
+@tree.command(name="rules", description="Configure punishment scaling rules.")
 @app_commands.default_permissions(administrator=True)
 @app_commands.check(check_admin)
 async def rules(interaction: discord.Interaction):
     await interaction.response.send_message(embed=build_rules_dashboard_embed(interaction.guild), view=RulesDashboardView(), ephemeral=True)
 
-@tree.command(name="antinuke", description="Manage anti-nuke immunity and safety enforcement")
+@tree.command(name="security", description="Manage anti-nuke protections.")
 @app_commands.default_permissions(administrator=True)
 @app_commands.check(check_admin)
 async def safety_panel(interaction: discord.Interaction):
@@ -800,7 +800,7 @@ async def safety_panel(interaction: discord.Interaction):
     )
     await interaction.response.send_message(embed=embed, view=SafetyView(), ephemeral=True)
 
-@tree.command(name="access", description="Manage role-based access to moderation tools")
+@tree.command(name="access", description="Manage moderation access roles.")
 @app_commands.default_permissions(administrator=True)
 @app_commands.check(check_owner)
 
@@ -819,7 +819,7 @@ async def access(interaction: discord.Interaction):
     view = AccessView()
     await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
-@tree.command(name="lockdown", description="Emergency: hide all channels from @everyone")
+@tree.command(name="lockdown", description="Hide server channels in an emergency.")
 @app_commands.default_permissions(administrator=True)
 @app_commands.check(check_owner)
 async def lockdown(interaction: discord.Interaction):
@@ -852,10 +852,10 @@ async def lockdown(interaction: discord.Interaction):
         
     await interaction.followup.send(f"**SERVER LOCKDOWN ACTIVE.**\n> Hidden {channels_affected} channels from @everyone.", ephemeral=True)
 
-@tree.command(name="unlockdown", description="Restore channel visibility after a lockdown")
+@tree.command(name="lift-lockdown", description="Restore channel visibility after lockdown.")
 @app_commands.default_permissions(administrator=True)
 @app_commands.check(check_owner)
-async def unlockdown(interaction: discord.Interaction):
+async def lift_lockdown(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
     guild = interaction.guild
     lockdown_data = bot.data_manager.lockdown
@@ -1116,7 +1116,7 @@ async def sync(ctx):
     await ctx.send(f"Synced {len(cmds)} commands! Check console for list.")
     logger.info(f"Synced commands: {[c.name for c in cmds]}")
 
-@tree.command(name="status", description="View bot latency and uptime")
+@tree.command(name="status", description="View bot latency and uptime.")
 @app_commands.default_permissions(moderate_members=True)
 async def status_cmd(interaction: discord.Interaction):
     if not is_staff(interaction):
@@ -2176,16 +2176,16 @@ class ServerBrandingView(discord.ui.View):
 
 # ── Commands ──
 
-branding_group = app_commands.Group(name="branding", description="Manage the bot's profile and appearance")
+branding_group = app_commands.Group(name="branding", description="Manage bot profile and server appearance.")
 
 
-@branding_group.command(name="global", description="Edit the bot's global profile — username, avatar, banner")
+@branding_group.command(name="global", description="Edit the bot's global profile.")
 @app_commands.check(check_owner)
 async def branding_global(interaction: discord.Interaction):
     await interaction.response.send_message(embed=_build_global_branding_embed(), view=GlobalBrandingView(), ephemeral=True)
 
 
-@branding_group.command(name="server", description="Edit the bot's appearance in this server — nickname, avatar, banner, bio")
+@branding_group.command(name="server", description="Edit this server's bot profile.")
 @app_commands.check(check_owner)
 async def branding_server(interaction: discord.Interaction):
     await interaction.response.send_message(embed=_build_server_branding_embed(interaction.guild), view=ServerBrandingView(), ephemeral=True)
@@ -2235,7 +2235,7 @@ async def setup(bot):
     bot.tree.add_command(safety_panel)
     bot.tree.add_command(access)
     bot.tree.add_command(lockdown)
-    bot.tree.add_command(unlockdown)
+    bot.tree.add_command(lift_lockdown)
     bot.tree.add_command(status_cmd)
     bot.tree.add_command(branding_group)
     bot.add_command(sync)

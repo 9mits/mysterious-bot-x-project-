@@ -26,6 +26,22 @@ EXTENSIONS = (
     "cogs.system",
 )
 
+DISABLED_APPLICATION_COMMANDS = frozenset({
+    "ban",
+    "kick",
+    "modmail",
+    "onboarding",
+    "feature",
+    "publicpunish",
+    "listcommands",
+    "rolehelp",
+    "rolesettings",
+    "undopunish",
+    "unlockdown",
+    "antinuke",
+    "help",
+})
+
 
 def _build_intents() -> discord.Intents:
     intents = discord.Intents.default()
@@ -61,6 +77,7 @@ class MGXBot(commands.Bot):
         for extension in EXTENSIONS:
             await self.load_extension(extension)
 
+        self._remove_disabled_application_commands()
         await self._restore_persistent_views()
 
         self.check_tempbans.start()
@@ -81,6 +98,15 @@ class MGXBot(commands.Bot):
                 log_id = data.get("log_id")
                 if log_id:
                     self.add_view(ModmailControlView(uid), message_id=log_id)
+
+    def _remove_disabled_application_commands(self) -> None:
+        for command_name in DISABLED_APPLICATION_COMMANDS:
+            for command_type in (
+                discord.AppCommandType.chat_input,
+                discord.AppCommandType.user,
+                discord.AppCommandType.message,
+            ):
+                self.tree.remove_command(command_name, type=command_type)
 
     async def close(self):
         for task_loop in (

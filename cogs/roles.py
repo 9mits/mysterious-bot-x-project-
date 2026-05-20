@@ -1093,7 +1093,7 @@ class RoleSettingsView(discord.ui.View):
 # ----------------- Commands -----------------
 # --- Command Groups ---
 
-@tree.command(name="role", description="Manage your personal custom role")
+@tree.command(name="role", description="Manage your custom role.")
 async def role_cmd(interaction: discord.Interaction):
     try:
         await interaction.response.defer(ephemeral=True)
@@ -1297,14 +1297,14 @@ async def role_manage(interaction: discord.Interaction, action: str, target: Opt
     await bot.data_manager.save_config()
     await interaction.followup.send(msg, ephemeral=True)
 
-@tree.command(name="rolesettings", description="Open the custom role settings panel")
+@tree.command(name="role-settings", description="Configure custom role access.")
 @app_commands.default_permissions(administrator=True)
 @app_commands.check(check_admin)
 async def role_settings(interaction: discord.Interaction):
     embed = build_role_settings_embed(interaction.guild)
     await interaction.response.send_message(embed=embed, view=RoleSettingsView(), ephemeral=True)
 
-@tree.command(name="rolehelp", description="Guide for creating and managing custom roles")
+@tree.command(name="role-guide", description="View the custom role guide.")
 async def help_cmd(interaction: discord.Interaction):
     embed = make_embed(
         "Custom Role Guide",

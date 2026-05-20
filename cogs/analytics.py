@@ -293,7 +293,7 @@ class StaffView(discord.ui.View):
         super().__init__(timeout=180)
         self.add_item(StaffSelect(staff_members))
 
-@tree.command(name="stats", description="Display comprehensive server-wide moderation analytics")
+@tree.command(name="stats", description="View moderation analytics.")
 @app_commands.default_permissions(manage_guild=True)
 async def stats(interaction: discord.Interaction, target: Optional[discord.Member] = None):
     conf = bot.data_manager.config
@@ -388,7 +388,7 @@ async def stats(interaction: discord.Interaction, target: Optional[discord.Membe
 
     await interaction.followup.send(embed=embed, ephemeral=True)
 
-@tree.command(name="directory", description="Display the staff team directory")
+@tree.command(name="directory", description="View the staff directory.")
 @app_commands.default_permissions(administrator=True)
 @app_commands.check(check_admin)
 async def directory(interaction: discord.Interaction):

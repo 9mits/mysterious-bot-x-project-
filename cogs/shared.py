@@ -1110,16 +1110,11 @@ def build_setup_dashboard_embed(guild: discord.Guild) -> discord.Embed:
         inline=True,
     )
 
-    # --- Support Channels ---
-    _modmail_inbox = config.get("modmail_inbox_channel")
-    _modmail_panel = config.get("modmail_panel_channel")
     _appeal = config.get("appeal_channel_id")
     embed.add_field(
-        name="Support Channels",
+        name="Appeal Channel",
         value=join_lines([
-            "Modmail Inbox: " + (f"<#{_modmail_inbox}>" if _modmail_inbox else "Not set"),
-            "Modmail Panel: " + (f"<#{_modmail_panel}>" if _modmail_panel else "Not set"),
-            "Appeals: " + (f"<#{_appeal}>" if _appeal else "Not set"),
+            f"<#{_appeal}>" if _appeal else "Not set",
         ]),
         inline=True,
     )
@@ -1127,47 +1122,19 @@ def build_setup_dashboard_embed(guild: discord.Guild) -> discord.Embed:
     return embed
 
 
-def build_modmail_settings_embed(guild: discord.Guild) -> discord.Embed:
-    config = bot.data_manager.config
-    discussion_threads = config.get("modmail_discussion_threads", True)
-    dm_prompt = get_feature_flag(config, "dm_modmail_prompt", True)
-    sla = config.get("modmail_sla_minutes", 60)
-    cooldown = config.get("dm_modmail_panel_cooldown_minutes", 30)
-    open_count = sum(1 for t in bot.data_manager.modmail.values() if t.get("status") == "open")
-    embed = make_embed(
-        "Modmail Settings",
-        "> Configure how the ticket inbox behaves for staff and users.",
-        kind="support",
-        scope=SCOPE_SUPPORT,
-        guild=guild,
-    )
-    embed.add_field(name="Discussion Threads", value="On" if discussion_threads else "Off", inline=True)
-    embed.add_field(name="DM Prompt", value="On" if dm_prompt else "Off", inline=True)
-    embed.add_field(name="SLA Reminder", value=f"{sla} min", inline=True)
-    embed.add_field(name="DM Panel Cooldown", value=f"{cooldown} min", inline=True)
-    embed.add_field(name="Open Tickets", value=str(open_count), inline=True)
-    return embed
-
-
 def build_config_dashboard_embed(guild: discord.Guild) -> discord.Embed:
     config = bot.data_manager.config
-    flags = config.get("feature_flags", {})
-    enabled_count = sum(1 for value in flags.values() if value)
     native_settings = get_native_automod_settings(config)
     embed = make_embed(
         "Bot Settings",
-        "> Manage backups, feature toggles, punishment scaling, and quick replies.",
+        "> Manage backups, imports, punishment scaling, and automation settings.",
         kind="info",
         scope=SCOPE_SYSTEM,
         guild=guild,
     )
-    embed.add_field(name="Features Active", value=f"{enabled_count} / {len(flags)}", inline=True)
     embed.add_field(name="Schema Version", value=f"v{config.get('schema_version', DEFAULT_SCHEMA_VERSION)}", inline=True)
-    embed.add_field(name="SLA Reminder", value=f"{config.get('modmail_sla_minutes', 60)} min", inline=True)
     embed.add_field(name="Native AutoMod", value="On" if native_settings.get("enabled", True) else "Off", inline=True)
     embed.add_field(name="Escalation Steps", value=str(len(get_escalation_steps(config))), inline=True)
-    canned = config.get("modmail_canned_replies", {})
-    embed.add_field(name="Saved Replies", value=str(len(canned)), inline=True)
     return embed
 
 
@@ -1238,23 +1205,6 @@ def build_automod_dashboard_embed(guild: discord.Guild) -> discord.Embed:
     embed.add_field(name="Exempt Users", value=str(len(settings.get("immunity_users", []))), inline=True)
     embed.add_field(name="Exempt Roles", value=str(len(settings.get("immunity_roles", []))), inline=True)
     embed.add_field(name="Exempt Channels", value=str(len(settings.get("immunity_channels", []))), inline=True)
-    return embed
-
-
-def build_feature_flags_embed(guild: discord.Guild) -> discord.Embed:
-    flags = bot.data_manager.config.get("feature_flags", {})
-    enabled_count = sum(1 for v in flags.values() if v)
-    embed = make_embed(
-        "Feature Toggles",
-        f"> **{enabled_count}/{len(flags)}** systems are currently active. Use the toggles below to enable or disable features.",
-        kind="info",
-        scope=SCOPE_SYSTEM,
-        guild=guild,
-    )
-    for key, value in sorted(flags.items()):
-        status = "✅ On" if value else "⬜ Off"
-        from .cases import get_feature_flag_name
-        embed.add_field(name=get_feature_flag_name(key), value=status, inline=True)
     return embed
 
 

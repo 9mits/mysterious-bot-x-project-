@@ -2,7 +2,7 @@ import asyncio
 import importlib
 import unittest
 
-from core.bot import EXTENSIONS, create_bot
+from core.bot import DISABLED_APPLICATION_COMMANDS, EXTENSIONS, create_bot
 
 
 class MbxBootstrapTests(unittest.TestCase):
@@ -30,7 +30,21 @@ class MbxBootstrapTests(unittest.TestCase):
             bot = create_bot()
             for extension in EXTENSIONS:
                 await bot.load_extension(extension)
+            bot._remove_disabled_application_commands()
             self.assertEqual(len(bot.extensions), len(EXTENSIONS))
+            command_names = {command.qualified_name for command in bot.tree.walk_commands()}
+            self.assertFalse(command_names & DISABLED_APPLICATION_COMMANDS)
+            self.assertTrue(
+                {
+                    "commands",
+                    "mod-guide",
+                    "role-guide",
+                    "role-settings",
+                    "security",
+                    "lift-lockdown",
+                    "undo",
+                }.issubset(command_names)
+            )
 
         asyncio.run(runner())
 
