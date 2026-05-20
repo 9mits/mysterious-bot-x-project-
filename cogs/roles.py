@@ -1297,7 +1297,7 @@ async def role_manage(interaction: discord.Interaction, action: str, target: Opt
     await bot.data_manager.save_config()
     await interaction.followup.send(msg, ephemeral=True)
 
-@tree.command(name="rolesettings", description="Open the custom role settings panel | admin")
+@tree.command(name="rolesettings", description="Open the custom role settings panel")
 @app_commands.default_permissions(administrator=True)
 @app_commands.check(check_admin)
 async def role_settings(interaction: discord.Interaction):

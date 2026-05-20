@@ -705,238 +705,241 @@ async def show_case_panel(
     message = await interaction.followup.send(embed=view.build_embed(), view=view, ephemeral=True, wait=True)
     view.message = message
 
+def _staff_check(interaction: discord.Interaction) -> bool:
+    return is_staff(interaction)
+
+
+@tree.command(name="punish", description="Sanction a user with a warning, timeout, or ban")
 @app_commands.default_permissions(moderate_members=True)
+@app_commands.check(_staff_check)
+async def punish(interaction: discord.Interaction, user: discord.User):
+    await show_punish_menu(interaction, user)
 
-class ModGroup(app_commands.Group):
-    def __init__(self):
-        super().__init__(name="mod", description="Advanced moderation suite")
 
-    async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        if not is_staff(interaction):
-            await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
-            return False
-        return True
+@tree.command(name="publicpunish", description="Punish a user and announce it publicly in this channel")
+@app_commands.default_permissions(moderate_members=True)
+@app_commands.check(_staff_check)
+async def publicpunish(interaction: discord.Interaction, user: discord.User):
+    await show_punish_menu(interaction, user, public=True)
 
-    @app_commands.command(name="punish", description="Sanction a user with a warning, timeout, or ban | mod")
-    @app_commands.default_permissions(moderate_members=True)
-    async def punish(self, interaction: discord.Interaction, user: discord.User):
-        await show_punish_menu(interaction, user)
 
-    @app_commands.command(name="publicpunish", description="Punish a user and announce it publicly in this channel | mod")
-    @app_commands.default_permissions(moderate_members=True)
-    async def publicpunish(self, interaction: discord.Interaction, user: discord.User):
-        await show_punish_menu(interaction, user, public=True)
+@tree.command(name="history", description="Retrieve the complete disciplinary history of a user")
+@app_commands.default_permissions(moderate_members=True)
+@app_commands.check(_staff_check)
+async def history(interaction: discord.Interaction, user: discord.Member):
+    await show_history_menu(interaction, user)
 
-    @app_commands.command(name="history", description="Retrieve the complete disciplinary history of a user | mod")
-    @app_commands.default_permissions(moderate_members=True)
-    async def history(self, interaction: discord.Interaction, user: discord.Member):
-        await show_history_menu(interaction, user)
 
-    @app_commands.command(name="active", description="Display a list of all currently active punishments | mod")
-    @app_commands.default_permissions(moderate_members=True)
-    async def active(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
-        now = discord.utils.utcnow()
-        active_list = []
-        for uid, records in bot.data_manager.punishments.items():
-            for i, rec in enumerate(records):
-                dur = rec.get("duration_minutes", 0)
-                p_type = rec.get("type", "timeout")
-                if p_type == "ban" and not rec.get("active", True):
-                    continue
-                if dur == 0: continue
-                ts_str = rec.get("timestamp")
-                ts = iso_to_dt(ts_str)
-                if not ts: continue
-                
-                if dur == -1:
-                    # Bans are always active for this list
-                    expiry = datetime.max.replace(tzinfo=timezone.utc)
-                elif dur > 0:
-                    expiry = ts + timedelta(minutes=dur)
-                
-                if dur == -1 or expiry > now:
-                    member = interaction.guild.get_member(int(uid))
-                    name = member.display_name if member else uid
-                    active_list.append((uid, rec, expiry, i+1, name))
-        if not active_list:
-            await interaction.followup.send("No active punishments found.", ephemeral=True)
-            return
-        active_list.sort(key=lambda x: x[2])
-        embed = build_active_punishments_embed(interaction.guild, active_list, now)
-        view = ActiveView(active_list)
-        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
-
-    @app_commands.command(name="undopunish", description="Open the punishment undo control panel | mod")
-    @app_commands.describe(reason="Optional reason to prefill in the undo panel")
-    @app_commands.default_permissions(moderate_members=True)
-    async def undopunish(self, interaction: discord.Interaction, user: discord.Member, reason: Optional[str] = None):
-        await show_history_menu(interaction, user, mode="undo", initial_undo_reason=reason)
-
-    @app_commands.command(name="purge", description="Bulk delete messages (Channel or User) | mod")
-    @app_commands.describe(amount="Messages to check/delete (max 999)", user="Optional: Target specific user", keyword="Optional: Filter by keyword")
-    @app_commands.default_permissions(manage_messages=True)
-    async def purge(self, interaction: discord.Interaction, amount: int, user: discord.Member = None, keyword: str = None):
-        if amount < 1 or amount > 999:
-            await interaction.response.send_message("Amount must be between 1 and 999.", ephemeral=True)
-            return
-        
-        await interaction.response.defer(ephemeral=True)
-        
-        # Scenario 1: Simple Channel Purge (No filters)
-        if not user and not keyword:
-            try:
-                deleted = await interaction.channel.purge(limit=amount)
-                await interaction.followup.send(f"Cleared **{len(deleted)}** messages.", ephemeral=True)
-                
-                log_embed = make_embed(
-                    "Messages Purged",
-                    "> A bulk message purge was executed in a channel.",
-                    kind="warning",
-                    scope=SCOPE_MODERATION,
-                    guild=interaction.guild,
-                )
-                log_embed.add_field(name="Actor", value=format_user_ref(interaction.user), inline=True)
-                log_embed.add_field(name="Channel", value=f"{interaction.channel.mention} (`{interaction.channel.id}`)", inline=True)
-                log_embed.add_field(name="Amount", value=str(len(deleted)), inline=True)
-                await send_punishment_log(interaction.guild, log_embed)
-            except discord.HTTPException as e:
-                await interaction.followup.send(f"Failed to purge: {e}", ephemeral=True)
-            return
-
-        # Scenario 2: Filtered Purge (User or Keyword)
-        to_delete = []
-        manual_delete = []
-        deleted_count = 0
-        
-        now = discord.utils.utcnow()
-        two_weeks_ago = now - timedelta(days=14)
-        
-        # Scan deeper for filtered purge
-        async for message in interaction.channel.history(limit=10000):
-            if deleted_count + len(to_delete) + len(manual_delete) >= amount:
-                break
-                
-            # Filter Logic
-            if user and message.author.id != user.id:
+@tree.command(name="active", description="Display a list of all currently active punishments")
+@app_commands.default_permissions(moderate_members=True)
+@app_commands.check(_staff_check)
+async def active(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    now = discord.utils.utcnow()
+    active_list = []
+    for uid, records in bot.data_manager.punishments.items():
+        for i, rec in enumerate(records):
+            dur = rec.get("duration_minutes", 0)
+            p_type = rec.get("type", "timeout")
+            if p_type == "ban" and not rec.get("active", True):
                 continue
-            if keyword and keyword.lower() not in message.content.lower():
-                continue
-            
-            if message.created_at > two_weeks_ago:
-                to_delete.append(message)
-                if len(to_delete) >= 100:
-                    try:
-                        await interaction.channel.delete_messages(to_delete)
-                        deleted_count += len(to_delete)
-                        to_delete = []
-                    except Exception: pass
-            else:
-                manual_delete.append(message)
-        
-        if to_delete:
-            try:
-                await interaction.channel.delete_messages(to_delete)
-                deleted_count += len(to_delete)
-            except Exception: pass
-                
-        for m in manual_delete:
-            try:
-                await m.delete()
-                deleted_count += 1
-                await asyncio.sleep(1.2)
-            except Exception: pass
+            if dur == 0: continue
+            ts_str = rec.get("timestamp")
+            ts = iso_to_dt(ts_str)
+            if not ts: continue
 
-        if deleted_count == 0:
-             await interaction.followup.send("No matching messages found to purge.", ephemeral=True)
-             return
+            if dur == -1:
+                expiry = datetime.max.replace(tzinfo=timezone.utc)
+            elif dur > 0:
+                expiry = ts + timedelta(minutes=dur)
 
-        target_str = user.mention if user else "Anyone"
-        await interaction.followup.send(f"Cleared **{deleted_count}** messages from {target_str}.", ephemeral=True)
-        
-        log_embed = make_embed(
-            "Filtered Purge",
-            "> A targeted purge removed messages using user or keyword filters.",
-            kind="warning",
-            scope=SCOPE_MODERATION,
-            guild=interaction.guild,
-        )
-        log_embed.add_field(name="Actor", value=format_user_ref(interaction.user), inline=True)
-        log_embed.add_field(name="Target", value=f"{target_str}", inline=True)
-        log_embed.add_field(name="Channel", value=f"{interaction.channel.mention} (`{interaction.channel.id}`)", inline=True)
-        log_embed.add_field(name="Amount", value=str(deleted_count), inline=True)
-        if keyword: log_embed.add_field(name="Keyword", value=keyword, inline=True)
-        await send_punishment_log(interaction.guild, log_embed)
+            if dur == -1 or expiry > now:
+                member = interaction.guild.get_member(int(uid))
+                name = member.display_name if member else uid
+                active_list.append((uid, rec, expiry, i+1, name))
+    if not active_list:
+        await interaction.followup.send("No active punishments found.", ephemeral=True)
+        return
+    active_list.sort(key=lambda x: x[2])
+    embed = build_active_punishments_embed(interaction.guild, active_list, now)
+    view = ActiveView(active_list)
+    await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
-    @app_commands.command(name="lock", description="Restrict message sending permissions in this channel | mod")
-    @app_commands.default_permissions(manage_channels=True)
-    async def lock(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
-        channel = interaction.channel
-        default_role = interaction.guild.default_role
-        overwrite = channel.overwrites_for(default_role)
-        overwrite.send_messages = False
+
+@tree.command(name="undopunish", description="Open the punishment undo control panel")
+@app_commands.describe(reason="Optional reason to prefill in the undo panel")
+@app_commands.default_permissions(moderate_members=True)
+@app_commands.check(_staff_check)
+async def undopunish(interaction: discord.Interaction, user: discord.Member, reason: Optional[str] = None):
+    await show_history_menu(interaction, user, mode="undo", initial_undo_reason=reason)
+
+
+@tree.command(name="purge", description="Bulk delete messages, optionally filtered by user or keyword")
+@app_commands.describe(amount="Messages to check/delete (max 999)", user="Optional: Target specific user", keyword="Optional: Filter by keyword")
+@app_commands.default_permissions(manage_messages=True)
+@app_commands.check(_staff_check)
+async def purge(interaction: discord.Interaction, amount: int, user: discord.Member = None, keyword: str = None):
+    if amount < 1 or amount > 999:
+        await interaction.response.send_message("Amount must be between 1 and 999.", ephemeral=True)
+        return
+
+    await interaction.response.defer(ephemeral=True)
+
+    if not user and not keyword:
         try:
-            await channel.set_permissions(default_role, overwrite=overwrite, reason=f"Locked by {interaction.user}")
-            public_embed = make_embed(
-                "Channel Locked",
-                "> This channel is temporarily locked by the moderation team.",
-                kind="danger",
+            deleted = await interaction.channel.purge(limit=amount)
+            await interaction.followup.send(f"Cleared **{len(deleted)}** messages.", ephemeral=True)
+
+            log_embed = make_embed(
+                "Messages Purged",
+                "> A bulk message purge was executed in a channel.",
+                kind="warning",
                 scope=SCOPE_MODERATION,
                 guild=interaction.guild,
             )
-            msg = await channel.send(embed=public_embed)
-            if "locked_channels" not in bot.data_manager.config: bot.data_manager.config["locked_channels"] = {}
-            bot.data_manager.config["locked_channels"][str(channel.id)] = msg.id
-            await bot.data_manager.save_config()
-            await interaction.followup.send("Channel locked.", ephemeral=True)
-        except Exception as e:
-            await interaction.followup.send(f"Error: {e}", ephemeral=True)
+            log_embed.add_field(name="Actor", value=format_user_ref(interaction.user), inline=True)
+            log_embed.add_field(name="Channel", value=f"{interaction.channel.mention} (`{interaction.channel.id}`)", inline=True)
+            log_embed.add_field(name="Amount", value=str(len(deleted)), inline=True)
+            await send_punishment_log(interaction.guild, log_embed)
+        except discord.HTTPException as e:
+            await interaction.followup.send(f"Failed to purge: {e}", ephemeral=True)
+        return
 
-    @app_commands.command(name="unlock", description="Restore message sending permissions in this channel | mod")
-    @app_commands.default_permissions(manage_channels=True)
-    async def unlock(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
-        channel = interaction.channel
-        default_role = interaction.guild.default_role
-        overwrite = channel.overwrites_for(default_role)
-        overwrite.send_messages = None
+    to_delete = []
+    manual_delete = []
+    deleted_count = 0
+
+    now = discord.utils.utcnow()
+    two_weeks_ago = now - timedelta(days=14)
+
+    async for message in interaction.channel.history(limit=10000):
+        if deleted_count + len(to_delete) + len(manual_delete) >= amount:
+            break
+
+        if user and message.author.id != user.id:
+            continue
+        if keyword and keyword.lower() not in message.content.lower():
+            continue
+
+        if message.created_at > two_weeks_ago:
+            to_delete.append(message)
+            if len(to_delete) >= 100:
+                try:
+                    await interaction.channel.delete_messages(to_delete)
+                    deleted_count += len(to_delete)
+                    to_delete = []
+                except Exception: pass
+        else:
+            manual_delete.append(message)
+
+    if to_delete:
         try:
-            await channel.set_permissions(default_role, overwrite=overwrite, reason=f"Unlocked by {interaction.user}")
-            cid = str(channel.id)
-            if "locked_channels" in bot.data_manager.config:
-                if cid in bot.data_manager.config["locked_channels"]:
-                    try:
-                        msg = await channel.fetch_message(bot.data_manager.config["locked_channels"][cid])
-                        await msg.delete()
-                    except Exception: pass
-                    del bot.data_manager.config["locked_channels"][cid]
-                    await bot.data_manager.save_config()
-            await interaction.followup.send("Channel unlocked.", ephemeral=True)
-        except Exception as e:
-            await interaction.followup.send(f"Error: {e}", ephemeral=True)
+            await interaction.channel.delete_messages(to_delete)
+            deleted_count += len(to_delete)
+        except Exception: pass
 
-    @app_commands.command(name="help", description="View all moderation commands")
-    async def help(self, interaction: discord.Interaction):
-        embed = build_mod_help_embed(interaction.guild)
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+    for m in manual_delete:
+        try:
+            await m.delete()
+            deleted_count += 1
+            await asyncio.sleep(1.2)
+        except Exception: pass
 
-    @app_commands.command(name="case", description="Open the case panel for a user or case ID | mod")
-    @app_commands.describe(case_id="Open a specific case by ID", user="Open the most recent case for a user")
-    async def case(self, interaction: discord.Interaction, case_id: Optional[app_commands.Range[int, 1, 999999]] = None, user: Optional[discord.Member] = None):
-        await show_case_panel(interaction, case_id=case_id, user=user)
+    if deleted_count == 0:
+        await interaction.followup.send("No matching messages found to purge.", ephemeral=True)
+        return
+
+    target_str = user.mention if user else "Anyone"
+    await interaction.followup.send(f"Cleared **{deleted_count}** messages from {target_str}.", ephemeral=True)
+
+    log_embed = make_embed(
+        "Filtered Purge",
+        "> A targeted purge removed messages using user or keyword filters.",
+        kind="warning",
+        scope=SCOPE_MODERATION,
+        guild=interaction.guild,
+    )
+    log_embed.add_field(name="Actor", value=format_user_ref(interaction.user), inline=True)
+    log_embed.add_field(name="Target", value=f"{target_str}", inline=True)
+    log_embed.add_field(name="Channel", value=f"{interaction.channel.mention} (`{interaction.channel.id}`)", inline=True)
+    log_embed.add_field(name="Amount", value=str(deleted_count), inline=True)
+    if keyword: log_embed.add_field(name="Keyword", value=keyword, inline=True)
+    await send_punishment_log(interaction.guild, log_embed)
 
 
-# --- Admin Commands (Flattened) ---
+@tree.command(name="lock", description="Restrict message sending permissions in this channel")
+@app_commands.default_permissions(manage_channels=True)
+@app_commands.check(_staff_check)
+async def lock(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    channel = interaction.channel
+    default_role = interaction.guild.default_role
+    overwrite = channel.overwrites_for(default_role)
+    overwrite.send_messages = False
+    try:
+        await channel.set_permissions(default_role, overwrite=overwrite, reason=f"Locked by {interaction.user}")
+        public_embed = make_embed(
+            "Channel Locked",
+            "> This channel is temporarily locked by the moderation team.",
+            kind="danger",
+            scope=SCOPE_MODERATION,
+            guild=interaction.guild,
+        )
+        msg = await channel.send(embed=public_embed)
+        if "locked_channels" not in bot.data_manager.config: bot.data_manager.config["locked_channels"] = {}
+        bot.data_manager.config["locked_channels"][str(channel.id)] = msg.id
+        await bot.data_manager.save_config()
+        await interaction.followup.send("Channel locked.", ephemeral=True)
+    except Exception as e:
+        await interaction.followup.send(f"Error: {e}", ephemeral=True)
 
-@tree.command(name="stats", description="Display comprehensive server-wide moderation analytics | admin")
-@app_commands.default_permissions(manage_guild=True)
 
+@tree.command(name="unlock", description="Restore message sending permissions in this channel")
+@app_commands.default_permissions(manage_channels=True)
+@app_commands.check(_staff_check)
+async def unlock(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    channel = interaction.channel
+    default_role = interaction.guild.default_role
+    overwrite = channel.overwrites_for(default_role)
+    overwrite.send_messages = None
+    try:
+        await channel.set_permissions(default_role, overwrite=overwrite, reason=f"Unlocked by {interaction.user}")
+        cid = str(channel.id)
+        if "locked_channels" in bot.data_manager.config:
+            if cid in bot.data_manager.config["locked_channels"]:
+                try:
+                    msg = await channel.fetch_message(bot.data_manager.config["locked_channels"][cid])
+                    await msg.delete()
+                except Exception: pass
+                del bot.data_manager.config["locked_channels"][cid]
+                await bot.data_manager.save_config()
+        await interaction.followup.send("Channel unlocked.", ephemeral=True)
+    except Exception as e:
+        await interaction.followup.send(f"Error: {e}", ephemeral=True)
+
+
+@tree.command(name="help", description="View the moderation command guide")
+async def mod_help(interaction: discord.Interaction):
+    embed = build_mod_help_embed(interaction.guild)
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+@tree.command(name="case", description="Open the case panel for a user or case ID")
+@app_commands.describe(case_id="Open a specific case by ID", user="Open the most recent case for a user")
+@app_commands.check(_staff_check)
+async def case(interaction: discord.Interaction, case_id: Optional[app_commands.Range[int, 1, 999999]] = None, user: Optional[discord.Member] = None):
+    await show_case_panel(interaction, case_id=case_id, user=user)
+
+
+@tree.context_menu(name="Punish")
+@app_commands.default_permissions(moderate_members=True)
 async def punish_context(interaction: discord.Interaction, user: discord.User):
     if not is_staff(interaction):
         await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
         return
     await show_punish_menu(interaction, user)
+
 
 @tree.context_menu(name="Mod History")
 @app_commands.default_permissions(moderate_members=True)
@@ -955,6 +958,15 @@ class ModerationCog(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(ModerationCog(bot))
-    bot.tree.add_command(ModGroup())
+    bot.tree.add_command(punish)
+    bot.tree.add_command(publicpunish)
+    bot.tree.add_command(history)
+    bot.tree.add_command(active)
+    bot.tree.add_command(undopunish)
+    bot.tree.add_command(purge)
+    bot.tree.add_command(lock)
+    bot.tree.add_command(unlock)
+    bot.tree.add_command(mod_help)
+    bot.tree.add_command(case)
     bot.tree.add_command(punish_context)
     bot.tree.add_command(history_context)

@@ -724,27 +724,27 @@ def build_mod_help_embed(guild: discord.Guild) -> discord.Embed:
     embed.add_field(
         name="Case Management",
         value="\n".join([
-            "`/mod case` — Open a case panel for notes, status, evidence, and assignment.",
-            "`/mod history` — Browse a user’s disciplinary record case-by-case.",
-            "`/mod active` — View all active bans and timeouts.",
-            "`/mod undopunish` — Reverse a punishment with a reason and case selector.",
+            "`/case` — Open a case panel for notes, status, evidence, and assignment.",
+            "`/history` — Browse a user’s disciplinary record case-by-case.",
+            "`/active` — View all active bans and timeouts.",
+            "`/undopunish` — Reverse a punishment with a reason and case selector.",
         ]),
         inline=False,
     )
     embed.add_field(
         name="Actions",
         value="\n".join([
-            "`/mod punish` — Open the sanction console with smart escalation.",
-            "`/mod publicpunish` — Punish and post the result publicly in the channel.",
-            "`/mod purge` — Bulk-delete messages with user or keyword filtering.",
+            "`/punish` — Open the sanction console with smart escalation.",
+            "`/publicpunish` — Punish and post the result publicly in the channel.",
+            "`/purge` — Bulk-delete messages with user or keyword filtering.",
         ]),
         inline=False,
     )
     embed.add_field(
         name="Channel Controls",
         value="\n".join([
-            "`/mod lock` — Restrict messaging in the current channel.",
-            "`/mod unlock` — Restore messaging in the current channel.",
+            "`/lock` — Restrict messaging in the current channel.",
+            "`/unlock` — Restore messaging in the current channel.",
         ]),
         inline=False,
     )

@@ -422,14 +422,14 @@ class SetupDashboardView(discord.ui.View):
         self.add_item(SetupDashboardActionSelect())
 
 
-@tree.command(name="setup", description="Open the server configuration panel | admin")
+@tree.command(name="setup", description="Open the server configuration panel")
 @app_commands.default_permissions(administrator=True)
 @app_commands.check(check_admin)
 async def setup_slash(interaction: discord.Interaction):
     embed = build_setup_dashboard_embed(interaction.guild)
     await interaction.response.send_message(embed=embed, view=SetupDashboardView(), ephemeral=True)
 
-@tree.command(name="config", description="Open the bot settings panel | admin")
+@tree.command(name="config", description="Open the bot settings panel")
 @app_commands.default_permissions(administrator=True)
 @app_commands.check(check_admin)
 async def config_cmd(interaction: discord.Interaction):

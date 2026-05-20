@@ -2219,7 +2219,7 @@ class AutoModWarningView(discord.ui.View):
         )
 
 
-@tree.command(name="automod", description="Open the AutoMod management panel | admin")
+@tree.command(name="automod", description="Open the AutoMod management panel")
 @app_commands.default_permissions(administrator=True)
 @app_commands.check(lambda i: has_permission_capability(i, "setup_panel"))
 async def automod_cmd(interaction: discord.Interaction):
