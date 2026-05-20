@@ -1112,25 +1112,23 @@ async def sync(ctx):
     guild = ctx.guild
     await ctx.send(f"Cleaning and syncing commands for **{guild.name}**...")
     bot._remove_disabled_application_commands()
-    guild_deleted = await prune_disabled_remote_commands(guild=guild)
-    global_deleted = await prune_disabled_remote_commands(guild=None)
+
+    bot.tree.clear_commands(guild=guild)
+    await bot.tree.sync(guild=guild)
+
+    global_deleted = await delete_remote_commands(guild=None)
     bot.tree.copy_global_to(guild=guild)
     guild_cmds = await bot.tree.sync(guild=guild)
-    global_cmds = await bot.tree.sync()
-    deleted = sorted(set(guild_deleted + global_deleted))
-    deleted_text = f" Removed stale commands: {', '.join(f'/{name}' for name in deleted)}." if deleted else ""
-    await ctx.send(f"Synced {len(guild_cmds)} server commands and {len(global_cmds)} global commands.{deleted_text}")
+    global_text = f" Removed {len(global_deleted)} stale global command(s)." if global_deleted else ""
+    await ctx.send(f"Synced {len(guild_cmds)} server commands.{global_text}")
     logger.info(
-        "Synced guild commands: %s | global commands: %s | removed stale commands: %s",
+        "Synced guild commands: %s | removed global commands: %s",
         [c.name for c in guild_cmds],
-        [c.name for c in global_cmds],
-        deleted,
+        global_deleted,
     )
 
 
-async def prune_disabled_remote_commands(*, guild: Optional[discord.Guild]) -> List[str]:
-    from core.bot import DISABLED_APPLICATION_COMMANDS
-
+async def delete_remote_commands(*, guild: Optional[discord.Guild]) -> List[str]:
     try:
         remote_commands = await bot.tree.fetch_commands(guild=guild)
     except discord.HTTPException as exc:
@@ -1140,8 +1138,6 @@ async def prune_disabled_remote_commands(*, guild: Optional[discord.Guild]) -> L
 
     deleted = []
     for command in remote_commands:
-        if command.name not in DISABLED_APPLICATION_COMMANDS:
-            continue
         try:
             await command.delete()
         except discord.HTTPException as exc:
@@ -1960,8 +1956,6 @@ async def on_message(message: discord.Message):
                 except Exception as e:
                     await message.channel.send(f"❌ Failed to send message: {e}")
             return
-
-    await bot.process_commands(message)
 
 # ──────────────────────────── /branding ────────────────────────────
 
