@@ -44,8 +44,10 @@ from core.services import (
 logger = logging.getLogger("MGXBot")
 
 # ----------------- PATHS -----------------
+# BOT_DATA_DIR can be set per-instance in .env to keep databases separate.
+# Defaults to the classic "database/" folder so existing installs are unaffected.
 BASE_DIR = Path(__file__).resolve().parent.parent
-DB_DIR = BASE_DIR / "database"
+DB_DIR = Path(os.environ.get("BOT_DATA_DIR", str(BASE_DIR / "database")))
 ROLES_FILE = DB_DIR / "roles.json"
 CONFIG_FILE = DB_DIR / "config.json"
 PUNISHMENTS_FILE = DB_DIR / "punishments.json"

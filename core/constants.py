@@ -1,17 +1,17 @@
 """
-Bot-level constants for Mysterious Bot X.
-
-All hardcoded defaults, IDs, and configuration values live here so they
-can be updated in one place without touching application logic.
+Bot-level constants — identity values are overridable via environment variables
+so multiple instances can run from the same codebase.
 """
 from __future__ import annotations
+
+import os
 
 import discord
 
 # ---------------------------------------------------------------------------
-# Bot identity
+# Bot identity  (override per-instance via .env)
 # ---------------------------------------------------------------------------
-BRAND_NAME = "Mysterious Bot X"
+BRAND_NAME = os.environ.get("BOT_BRAND_NAME", "Mysterious Bot X")
 TOKEN_ENV_VARS = ("DISCORD_BOT_TOKEN", "MBX_BOT_TOKEN")
 
 # ---------------------------------------------------------------------------
