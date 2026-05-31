@@ -1170,7 +1170,7 @@ def build_automod_dashboard_embed(guild: discord.Guild) -> discord.Embed:
         total_steps += step_count
         if step_count:
             configured_rules += 1
-    smart_enabled = bot.data_manager.config.get("smart_automod_enabled", False)
+    smart_enabled = bool(bot.data_manager.config.get("feature_flags", {}).get("smart_automod", False))
     embed = make_embed(
         "AutoMod Control Center",
         join_lines([
