@@ -1522,7 +1522,7 @@ class AutoModPolicyEditorView(discord.ui.View):
         view = AutoModPolicyEditorView(rule=self.rule, rules=self.rules, step_index=len(steps) - 1)
         await interaction.response.edit_message(embed=view.build_embed(interaction.guild), view=view)
 
-    @discord.ui.button(label="Edit Selected Step", style=discord.ButtonStyle.primary, row=1)
+    @discord.ui.button(label="Edit Step", style=discord.ButtonStyle.primary, row=1)
     async def custom_amounts(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(AutoModStepValuesModal(parent_view=self))
 
@@ -1530,7 +1530,7 @@ class AutoModPolicyEditorView(discord.ui.View):
     async def edit_reason(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(AutoModPolicyReasonModal(rule=self.rule, rules=self.rules))
 
-    @discord.ui.button(label="Remove Selected", style=discord.ButtonStyle.danger, row=2)
+    @discord.ui.button(label="Remove Step", style=discord.ButtonStyle.danger, row=2)
     async def remove_step(self, interaction: discord.Interaction, button: discord.ui.Button):
         policy = self.get_current_policy()
         steps = self.get_current_steps()
@@ -1900,14 +1900,7 @@ class AutoModDashboardView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=180)
 
-    @discord.ui.button(label="Refresh", style=discord.ButtonStyle.secondary, row=0)
-    async def refresh(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.edit_message(embed=build_automod_dashboard_embed(interaction.guild), view=AutoModDashboardView())
-
-    @discord.ui.button(label="Bot Response", style=discord.ButtonStyle.primary, row=0)
-    async def bridge(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.edit_message(embed=build_automod_bridge_embed(interaction.guild), view=AutoModBridgeSettingsView())
-
+    # ── Row 0 · Discord AutoMod rule follow-ups ──────────────────────────
     @discord.ui.button(label="Rule Punishments", style=discord.ButtonStyle.primary, row=0)
     async def native_rules(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
@@ -1915,13 +1908,27 @@ class AutoModDashboardView(discord.ui.View):
         view = AutoModRuleBrowserView(rules)
         await interaction.edit_original_response(embed=build_automod_rule_browser_embed(interaction.guild, rules), view=view)
 
-    @discord.ui.button(label="Log Channels", style=discord.ButtonStyle.success, row=1)
+    @discord.ui.button(label="Response Settings", style=discord.ButtonStyle.primary, row=0)
+    async def bridge(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(embed=build_automod_bridge_embed(interaction.guild), view=AutoModBridgeSettingsView())
+
+    # ── Row 1 · Filtering & routing ──────────────────────────────────────
+    @discord.ui.button(label="Smart Filters", style=discord.ButtonStyle.secondary, row=1)
+    async def smart(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(embed=build_smart_automod_embed(interaction.guild), view=SmartAutoModSettingsView())
+
+    @discord.ui.button(label="Immunity", style=discord.ButtonStyle.secondary, row=1)
+    async def immunity(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(embed=build_automod_immunity_embed(interaction.guild), view=AutoModImmunityView())
+
+    @discord.ui.button(label="Log Channels", style=discord.ButtonStyle.secondary, row=1)
     async def routing(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.edit_message(embed=build_automod_routing_embed(interaction.guild), view=AutoModChannelSettingsView())
 
-    @discord.ui.button(label="Immunity", style=discord.ButtonStyle.success, row=1)
-    async def immunity(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.edit_message(embed=build_automod_immunity_embed(interaction.guild), view=AutoModImmunityView())
+    # ── Row 2 · Utility ──────────────────────────────────────────────────
+    @discord.ui.button(label="Refresh", style=discord.ButtonStyle.secondary, row=2)
+    async def refresh(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(embed=build_automod_dashboard_embed(interaction.guild), view=AutoModDashboardView())
 
 
 async def resolve_user_for_automod_report(guild: Optional[discord.Guild], user_id: int) -> Optional[Union[discord.Member, discord.User]]:

@@ -1170,28 +1170,39 @@ def build_automod_dashboard_embed(guild: discord.Guild) -> discord.Embed:
         total_steps += step_count
         if step_count:
             configured_rules += 1
+    smart_enabled = bool(bot.data_manager.config.get("feature_flags", {}).get("smart_automod", False))
     embed = make_embed(
-        "AutoMod Setup",
-        "> Configure the bot's follow-up after Discord AutoMod triggers.",
+        "AutoMod Control Center",
+        join_lines([
+            "> Manage how the bot follows up on Discord AutoMod and runs its own smart filters.",
+            "",
+            "**Rules** — `Rule Punishments` set escalating actions per AutoMod rule · `Response Settings` control what the user sees.",
+            "**Protection** — `Smart Filters`, `Immunity`, and `Log Channels`.",
+        ]),
         kind="warning",
         scope=SCOPE_MODERATION,
         guild=guild,
     )
     embed.add_field(
-        name="Bot Response",
+        name="Rule Punishments",
         value=join_lines([
-            f"Status: {'On' if settings.get('enabled', True) else 'Off'}",
-            f"User DMs: {'On' if settings.get('warning_dm_enabled', True) else 'Off'}",
-            f"Report Button: {'On' if settings.get('report_button_enabled', True) else 'Off'}",
+            f"Rules configured: {configured_rules}",
+            f"Punishment steps: {total_steps}",
         ]),
         inline=True,
     )
     embed.add_field(
-        name="Rules",
+        name="Response Settings",
         value=join_lines([
-            f"Rules Configured: {configured_rules}",
-            f"Punishment Steps: {total_steps}",
+            f"Channel message: {'On' if settings.get('enabled', True) else 'Off'}",
+            f"User DM: {'On' if settings.get('warning_dm_enabled', True) else 'Off'}",
+            f"Report button: {'On' if settings.get('report_button_enabled', True) else 'Off'}",
         ]),
+        inline=True,
+    )
+    embed.add_field(
+        name="Smart Filters",
+        value=f"Status: {'Enabled' if smart_enabled else 'Disabled'}",
         inline=True,
     )
     embed.add_field(
