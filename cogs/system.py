@@ -1157,7 +1157,7 @@ async def status_cmd(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 @tree.command(name="serverinfo", description="View detailed information about this server.")
-@app_commands.default_permissions(send_messages=True)
+@app_commands.default_permissions(view_channel=True)
 async def serverinfo_cmd(interaction: discord.Interaction):
     g = interaction.guild
     await g.fetch_channels()
@@ -1214,14 +1214,7 @@ async def serverinfo_cmd(interaction: discord.Interaction):
     embed.add_field(name="Content Filter", value=str(g.explicit_content_filter).replace("_", " ").title(), inline=True)
     embed.add_field(name="2FA Requirement", value="Enabled" if g.mfa_level else "Disabled",         inline=True)
 
-    if g.description:
-        embed.add_field(name="Description", value=g.description, inline=False)
-
-    features = [f.replace("_", " ").title() for f in g.features]
-    if features:
-        embed.add_field(name="Features", value=", ".join(features), inline=False)
-
-    await interaction.response.send_message(embed=embed)
+    await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 @bot.event
