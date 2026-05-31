@@ -1201,17 +1201,33 @@ async def serverinfo_cmd(interaction: discord.Interaction):
         + f" · {categories} categories"
     )
 
-    embed.add_field(name="Owner",          value=f"<@{g.owner_id}>",                                                                        inline=True)
-    embed.add_field(name="Created",        value=f"<t:{created_ts}:D> (<t:{created_ts}:R>)",                                            inline=True)
-    embed.add_field(name="Server ID",      value=f"`{g.id}`",                                                                           inline=False)
-    embed.add_field(name="Members",        value=f"`{total_members} total · {humans} humans · {bots} bots`",                            inline=True)
-    embed.add_field(name="Channels",       value=f"`{total_channels} total · {channel_breakdown}`",                                     inline=False)
-    embed.add_field(name="Roles",          value=f"`{role_count}`",                                                                     inline=True)
-    embed.add_field(name="Emojis",         value=f"`{len(g.emojis)} / {g.emoji_limit}`",                                               inline=True)
-    embed.add_field(name="Stickers",       value=f"`{len(g.stickers)} / {g.sticker_limit}`",                                           inline=True)
-    embed.add_field(name="Boost",          value=f"`Level {boost_level} · {boosters} boosts`",                                         inline=True)
-    embed.add_field(name="Verification",   value=f"`{str(g.verification_level).replace('_', ' ').title()}`",                           inline=True)
-    embed.add_field(name="Content Filter", value=f"`{str(g.explicit_content_filter).replace('_', ' ').title()}`",                      inline=True)
+    embed.add_field(name="Owner",   value=f"<@{g.owner_id}>",                            inline=True)
+    embed.add_field(name="Created", value=f"<t:{created_ts}:D> — <t:{created_ts}:R>",    inline=True)
+    embed.add_field(name="ID",      value=str(g.id),                                     inline=True)
+
+    embed.add_field(
+        name="Members",
+        value=f"> **{total_members}** total\n> {humans} humans · {bots} bots",
+        inline=True,
+    )
+    embed.add_field(
+        name="Channels",
+        value=f"> **{total_channels}** total\n> {text_channels} text · {voice_channels} voice · {stage_channels} stage · {forum_channels} forum\n> {categories} categories",
+        inline=True,
+    )
+    embed.add_field(name="​", value="​", inline=True)
+
+    embed.add_field(
+        name="Roles & Server",
+        value=f"> **{role_count}** roles\n> Boost: Level {boost_level} · {boosters} boosts\n> Verification: {str(g.verification_level).replace('_', ' ').title()}",
+        inline=True,
+    )
+    embed.add_field(
+        name="Content",
+        value=f"> **{len(g.emojis)}** / {g.emoji_limit} emojis\n> **{len(g.stickers)}** / {g.sticker_limit} stickers\n> Filter: {str(g.explicit_content_filter).replace('_', ' ').title()}",
+        inline=True,
+    )
+    embed.add_field(name="​", value="​", inline=True)
 
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
