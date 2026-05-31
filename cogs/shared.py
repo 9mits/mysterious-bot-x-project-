@@ -954,6 +954,7 @@ async def send_modmail_panel_message(
     *,
     intro: Optional[str] = None,
     in_dm: bool = False,
+    require_embed: bool = False,
 ):
     def make_panel_embed() -> discord.Embed:
         is_dm_panel = in_dm or isinstance(destination, (discord.User, discord.Member, discord.DMChannel))
@@ -982,6 +983,8 @@ async def send_modmail_panel_message(
     try:
         return await destination.send(embed=make_panel_embed(), view=ModmailPanelView())
     except (discord.Forbidden, discord.HTTPException) as exc:
+        if require_embed:
+            raise
         logger.warning("Failed to send modmail panel embed; retrying with plain content: %s", exc)
         content = "Need staff help? Open a private ticket below."
         if intro:

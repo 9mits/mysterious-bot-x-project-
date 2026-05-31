@@ -620,6 +620,16 @@ def validate_guild_configuration(config: Dict[str, Any], guild: discord.Guild, m
             if not perms.create_public_threads and not perms.create_private_threads:
                 findings.append(ValidationFinding("warning", "Permissions", "Bot cannot create threads in the modmail inbox."))
 
+    modmail_panel_id = _parse_int(config.get("modmail_panel_channel"))
+    if modmail_panel_id is not None:
+        panel_channel = guild.get_channel(modmail_panel_id)
+        if panel_channel and isinstance(panel_channel, discord.TextChannel):
+            perms = panel_channel.permissions_for(me)
+            if not perms.send_messages:
+                findings.append(ValidationFinding("warning", "Permissions", "Bot cannot send messages in the modmail panel channel."))
+            if not perms.embed_links:
+                findings.append(ValidationFinding("warning", "Permissions", "Bot cannot embed links in the modmail panel channel."))
+
     if not findings:
         findings.append(ValidationFinding("success", "Validation", "No issues detected in the current setup."))
 

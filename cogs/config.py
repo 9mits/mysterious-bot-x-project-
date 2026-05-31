@@ -304,6 +304,8 @@ def _missing_panel_permissions(channel, guild: discord.Guild) -> list[str]:
         missing.append("View Channel")
     if not permissions.send_messages:
         missing.append("Send Messages")
+    if not permissions.embed_links:
+        missing.append("Embed Links")
     return missing
 
 
@@ -331,9 +333,17 @@ async def send_configured_modmail_panel(
         await interaction.response.defer(ephemeral=True, thinking=True)
 
     try:
-        message = await send_modmail_panel_message(target_channel, interaction.guild)
+        message = await send_modmail_panel_message(
+            target_channel,
+            interaction.guild,
+            require_embed=True,
+        )
     except discord.Forbidden:
-        await respond_with_error(interaction, "I cannot send messages in the modmail panel channel.", scope=SCOPE_SYSTEM)
+        await respond_with_error(
+            interaction,
+            "I cannot send the modmail panel embed in that channel. Make sure I have **View Channel**, **Send Messages**, and **Embed Links**.",
+            scope=SCOPE_SYSTEM,
+        )
         return
     except discord.HTTPException as exc:
         await respond_with_error(interaction, f"Discord rejected the modmail panel message: HTTP {exc.status}.", scope=SCOPE_SYSTEM)
