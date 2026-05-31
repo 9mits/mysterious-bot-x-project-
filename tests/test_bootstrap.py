@@ -3,6 +3,7 @@ import importlib
 import unittest
 
 from core.bot import DISABLED_APPLICATION_COMMANDS, EXTENSIONS, create_bot
+from cogs.config import ConfigTypeSelect, SetupDashboardActionSelect
 
 
 class MbxBootstrapTests(unittest.TestCase):
@@ -25,6 +26,19 @@ class MbxBootstrapTests(unittest.TestCase):
         ):
             module = importlib.import_module(module_name)
             self.assertTrue(hasattr(module, "setup"))
+
+    def test_setup_exposes_modmail_panel_controls(self):
+        channel_select = ConfigTypeSelect("channels")
+        self.assertIn(
+            "modmail_panel_channel",
+            {option.value for option in channel_select.options},
+        )
+
+        action_select = SetupDashboardActionSelect()
+        self.assertIn(
+            "send_modmail_panel",
+            {option.value for option in action_select.options},
+        )
 
     def test_extensions_load_on_fresh_bot(self):
         async def runner():

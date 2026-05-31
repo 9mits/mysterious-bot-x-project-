@@ -27,6 +27,7 @@ from .shared import (
     build_escalation_matrix_embed,
     build_setup_validation_embed,
     check_admin,
+    send_modmail_panel_message,
 )
 
 
@@ -79,6 +80,7 @@ class ConfigTypeSelect(discord.ui.Select):
                 discord.SelectOption(label="Archive Category", value="category_archive", description="Category for archive or storage channels."),
                 discord.SelectOption(label="Modmail Inbox Channel", value="modmail_inbox_channel", description="Where incoming modmail tickets appear for staff."),
                 discord.SelectOption(label="Modmail Action Log Channel", value="modmail_action_log_channel", description="Where modmail staff actions are logged."),
+                discord.SelectOption(label="Modmail Panel Channel", value="modmail_panel_channel", description="Where the public support panel is posted."),
             ]
         super().__init__(
             placeholder=f"Select {category[:-1]} to configure...",
@@ -248,6 +250,7 @@ class SetupDashboardActionSelect(discord.ui.Select):
     def __init__(self):
         options = [
             discord.SelectOption(label="Set Guild ID", value="guild_id", description="Change the guild ID used by the bot."),
+            discord.SelectOption(label="Send Modmail Panel", value="send_modmail_panel", description="Post the support panel to the configured channel."),
             discord.SelectOption(label="Validate Setup", value="validate", description="Run the configuration validation checks."),
         ]
         super().__init__(
@@ -263,6 +266,9 @@ class SetupDashboardActionSelect(discord.ui.Select):
         if action == "guild_id":
             await interaction.response.send_modal(GuildIdModal(interaction.guild.id))
             return
+        if action == "send_modmail_panel":
+            await self.send_modmail_panel(interaction)
+            return
         if action == "validate":
             if not get_feature_flag(bot.data_manager.config, "setup_validation", True):
                 await respond_with_error(interaction, "The setup check is currently turned off in the feature settings.", scope=SCOPE_SYSTEM)
@@ -273,6 +279,54 @@ class SetupDashboardActionSelect(discord.ui.Select):
                 return
             findings = validate_guild_configuration(bot.data_manager.config, interaction.guild, me)
             await interaction.response.send_message(embed=build_setup_validation_embed(interaction.guild, findings), ephemeral=True)
+
+    async def send_modmail_panel(self, interaction: discord.Interaction) -> None:
+        if interaction.guild is None:
+            await respond_with_error(interaction, "The modmail panel can only be posted from a server.", scope=SCOPE_SYSTEM)
+            return
+
+        channel_id = bot.data_manager.config.get("modmail_panel_channel")
+        if not channel_id:
+            await respond_with_error(interaction, "Set **Modmail Panel Channel** under setup channels first.", scope=SCOPE_SYSTEM)
+            return
+
+        try:
+            normalized_channel_id = int(channel_id)
+        except (TypeError, ValueError):
+            await respond_with_error(interaction, "The configured modmail panel channel ID is invalid.", scope=SCOPE_SYSTEM)
+            return
+
+        channel = interaction.guild.get_channel(normalized_channel_id)
+        if channel is None:
+            try:
+                channel = await interaction.guild.fetch_channel(normalized_channel_id)
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                channel = None
+
+        if channel is None or not hasattr(channel, "send"):
+            await respond_with_error(interaction, "The configured modmail panel channel could not be found.", scope=SCOPE_SYSTEM)
+            return
+
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        try:
+            message = await send_modmail_panel_message(channel, interaction.guild)
+        except discord.Forbidden:
+            await respond_with_error(interaction, "I cannot send messages in the configured modmail panel channel.", scope=SCOPE_SYSTEM)
+            return
+        except discord.HTTPException as exc:
+            await respond_with_error(interaction, f"Discord rejected the modmail panel message: HTTP {exc.status}.", scope=SCOPE_SYSTEM)
+            return
+
+        channel_mention = getattr(channel, "mention", f"`{normalized_channel_id}`")
+        await interaction.followup.send(
+            embed=make_confirmation_embed(
+                "Modmail Panel Sent",
+                f"> Posted the support panel in {channel_mention}.\n> [Jump to message]({message.jump_url})",
+                scope=SCOPE_SYSTEM,
+                guild=interaction.guild,
+            ),
+            ephemeral=True,
+        )
 
 
 class SetupRolesView(discord.ui.View):
@@ -326,6 +380,7 @@ class SetupLandingView(discord.ui.View):
             f"**Archive Category:** {_ch('category_archive')}\n"
             f"**Modmail Inbox:** {_ch('modmail_inbox_channel')}\n"
             f"**Modmail Action Log:** {_ch('modmail_action_log_channel')}\n\n"
+            f"**Modmail Panel:** {_ch('modmail_panel_channel')}\n\n"
             "Use the dropdown below to update a channel."
         )
         await interaction.response.send_message(embed=embed, view=SetupChannelsView(), ephemeral=True)
@@ -333,7 +388,7 @@ class SetupLandingView(discord.ui.View):
     @discord.ui.button(label="Other", style=discord.ButtonStyle.secondary, row=0)
     async def other_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         embed = discord.Embed(title="Other Settings", color=discord.Color.greyple())
-        embed.description = "Set the Guild ID or run a full configuration validation check."
+        embed.description = "Set the Guild ID, send the modmail panel, or run a full configuration validation check."
         await interaction.response.send_message(embed=embed, view=SetupOtherView(), ephemeral=True)
 
 

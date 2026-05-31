@@ -1099,6 +1099,9 @@ def build_setup_dashboard_embed(guild: discord.Guild) -> discord.Embed:
     # --- Log Channels ---
     _automod_log = config.get("automod_log_channel_id")
     _automod_report = config.get("automod_report_channel_id")
+    _modmail_inbox = config.get("modmail_inbox_channel")
+    _modmail_action_log = config.get("modmail_action_log_channel")
+    _modmail_panel = config.get("modmail_panel_channel")
     embed.add_field(
         name="Log Channels",
         value=join_lines([
@@ -1106,6 +1109,15 @@ def build_setup_dashboard_embed(guild: discord.Guild) -> discord.Embed:
             "Punishments: " + (f"<#{configured_punishment_log_channel_id}>" if configured_punishment_log_channel_id else "Falls back to general"),
             "AutoMod: " + (f"<#{_automod_log}>" if _automod_log else "Not set"),
             "Reports: " + (f"<#{_automod_report}>" if _automod_report else "Not set"),
+        ]),
+        inline=True,
+    )
+    embed.add_field(
+        name="Modmail",
+        value=join_lines([
+            "Inbox: " + (f"<#{_modmail_inbox}>" if _modmail_inbox else "Not set"),
+            "Actions: " + (f"<#{_modmail_action_log}>" if _modmail_action_log else "Not set"),
+            "Panel: " + (f"<#{_modmail_panel}>" if _modmail_panel else "Not set"),
         ]),
         inline=True,
     )
