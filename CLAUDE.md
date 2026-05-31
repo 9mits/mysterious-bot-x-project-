@@ -43,7 +43,7 @@ pip install -r requirements.txt  # discord.py>=2.6, aiohttp>=3.13, aiosqlite>=0.
 
 ### Entry point
 
-`main.py` → `core/bot.py:run()` creates `MGXBot`, a `commands.Bot` subclass. On `setup_hook` it opens the aiosqlite database, loads all data into memory, registers persistent views, and loads all 8 cog extensions from `cogs/`.
+`main.py` → `core/bot.py:run()` creates `MGXBot`, a `commands.Bot` subclass. On `setup_hook` it opens the aiosqlite database, loads all data into memory, registers persistent views, and loads all 9 cog extensions from `cogs/`.
 
 ### Directory layout
 
@@ -62,6 +62,7 @@ cogs/               — discord.py Cog extensions, one per domain
   cases.py          — Case/punishment helpers, history views, undo/appeal flows
   moderation.py     — execute_punishment, ModGroup slash commands, punish/history menus
   roles.py          — Custom booster role CRUD, role_cmd, role_manage, role_settings
+  derole.py         — /derole bulk role-removal workflow
   modmail.py        — Support ticket relay, ModmailControlView, ModmailPanelView
   automod.py        — Native + smart automod engine, policy views, automod_cmd
   config.py         — /setup, /config commands, all settings views

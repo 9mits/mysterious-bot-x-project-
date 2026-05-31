@@ -19,6 +19,7 @@ EXTENSIONS = (
     "cogs.cases",
     "cogs.moderation",
     "cogs.roles",
+    "cogs.derole",
     "cogs.modmail",
     "cogs.automod",
     "cogs.config",
