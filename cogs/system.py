@@ -264,12 +264,12 @@ class ArchiveConfirmView(discord.ui.View):
                 overwrites=self.final_overwrites,
                 reason=f"Archived by {interaction.user}"
             )
-                
+
         except Exception as e:
-            await interaction.followup.send(f"Failed to archive channel: {e}", ephemeral=True)
+            await interaction.edit_original_response(content=f"Failed to archive channel: {e}")
             return
 
-        await interaction.followup.send(f"Channel archived successfully to **{self.target_cat.name}**.", ephemeral=True)
+        await interaction.edit_original_response(content=f"Channel archived successfully to **{self.target_cat.name}**.")
 
         # Log
         log_embed = make_embed(
@@ -310,7 +310,7 @@ class CloneConfirmView(discord.ui.View):
             new_channel = await self.channel.clone(reason=f"Cloned by {interaction.user}")
             await new_channel.edit(position=self.channel.position)
         except Exception as e:
-            await interaction.followup.send(f"Failed to clone channel: {e}", ephemeral=True)
+            await interaction.edit_original_response(content=f"Failed to clone channel: {e}")
             return
 
         # 2. Archive the old channel
@@ -330,10 +330,10 @@ class CloneConfirmView(discord.ui.View):
                 reason=f"Archived (Cloned) by {interaction.user}"
             )
         except Exception as e:
-            await interaction.followup.send(f"Channel cloned to {new_channel.mention}, but failed to archive old channel: {e}", ephemeral=True)
+            await interaction.edit_original_response(content=f"Channel cloned to {new_channel.mention}, but failed to archive old channel: {e}")
             return
 
-        await interaction.followup.send(f"Success! Channel cloned to {new_channel.mention} and original archived.", ephemeral=True)
+        await interaction.edit_original_response(content=f"Success! Channel cloned to {new_channel.mention} and original archived.")
         
         try:
             embed = make_embed(
