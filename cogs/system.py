@@ -1207,24 +1207,24 @@ async def serverinfo_cmd(interaction: discord.Interaction):
 
     embed.add_field(
         name="Members",
-        value=f"> **{total_members}** total\n> {humans} humans · {bots} bots",
+        value=f"**{total_members}** total\n{humans} humans · {bots} bots",
         inline=True,
     )
     embed.add_field(
         name="Channels",
-        value=f"> **{total_channels}** total\n> {text_channels} text · {voice_channels} voice · {stage_channels} stage · {forum_channels} forum\n> {categories} categories",
+        value=f"**{total_channels}** total\n{text_channels} text · {voice_channels} voice · {stage_channels} stage · {forum_channels} forum\n{categories} categories",
         inline=True,
     )
     embed.add_field(name="​", value="​", inline=True)
 
     embed.add_field(
         name="Roles & Server",
-        value=f"> **{role_count}** roles\n> Boost: Level {boost_level} · {boosters} boosts\n> Verification: {str(g.verification_level).replace('_', ' ').title()}",
+        value=f"**{role_count}** roles\nBoost: Level {boost_level} · {boosters} boosts\nVerification: {str(g.verification_level).replace('_', ' ').title()}",
         inline=True,
     )
     embed.add_field(
         name="Content",
-        value=f"> **{len(g.emojis)}** / {g.emoji_limit} emojis\n> **{len(g.stickers)}** / {g.sticker_limit} stickers\n> Filter: {str(g.explicit_content_filter).replace('_', ' ').title()}",
+        value=f"**{len(g.emojis)}** / {g.emoji_limit} emojis\n**{len(g.stickers)}** / {g.sticker_limit} stickers\nFilter: {str(g.explicit_content_filter).replace('_', ' ').title()}",
         inline=True,
     )
     embed.add_field(name="​", value="​", inline=True)
