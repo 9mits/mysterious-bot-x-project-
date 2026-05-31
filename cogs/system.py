@@ -1194,43 +1194,24 @@ async def serverinfo_cmd(interaction: discord.Interaction):
     if g.banner:
         embed.set_image(url=g.banner.url)
 
-    # Row 1 — identity
-    embed.add_field(name="Owner",   value=f"<@{g.owner_id}>",                              inline=True)
-    embed.add_field(name="Created", value=f"<t:{created_ts}:D>\n<t:{created_ts}:R>",       inline=True)
-    embed.add_field(name="Server ID", value=f"`{g.id}`",                                   inline=True)
-
-    # Spacer
-    embed.add_field(name="​", value="​", inline=False)
-
-    # Row 2 — members & channels (full width so they breathe)
-    embed.add_field(
-        name="Members",
-        value=f"**{total_members}** total  ·  {humans} humans  ·  {bots} bots",
-        inline=False,
-    )
-    embed.add_field(
-        name="Channels",
-        value=(
-            f"**{total_channels}** total  ·  {text_channels} text  ·  {voice_channels} voice"
-            + (f"  ·  {stage_channels} stage" if stage_channels else "")
-            + (f"  ·  {forum_channels} forum" if forum_channels else "")
-            + f"  ·  {categories} categories"
-        ),
-        inline=False,
+    channel_breakdown = (
+        f"{text_channels} text · {voice_channels} voice"
+        + (f" · {stage_channels} stage" if stage_channels else "")
+        + (f" · {forum_channels} forum" if forum_channels else "")
+        + f" · {categories} categories"
     )
 
-    # Spacer
-    embed.add_field(name="​", value="​", inline=False)
-
-    # Row 3 — counts
-    embed.add_field(name="Roles",    value=str(role_count),                                inline=True)
-    embed.add_field(name="Emojis",   value=f"{len(g.emojis)} / {g.emoji_limit}",           inline=True)
-    embed.add_field(name="Stickers", value=f"{len(g.stickers)} / {g.sticker_limit}",       inline=True)
-
-    # Row 4 — server settings
-    embed.add_field(name="Boost",          value=f"Level {boost_level}  ·  {boosters} boosts",                               inline=True)
-    embed.add_field(name="Verification",   value=str(g.verification_level).replace("_", " ").title(),                        inline=True)
-    embed.add_field(name="Content Filter", value=str(g.explicit_content_filter).replace("_", " ").title(),                   inline=True)
+    embed.add_field(name="Owner",          value=f"<@{g.owner_id}>",                                          inline=True)
+    embed.add_field(name="Created",        value=f"<t:{created_ts}:D> (<t:{created_ts}:R>)",                  inline=True)
+    embed.add_field(name="Server ID",      value=f"`{g.id}`",                                                 inline=False)
+    embed.add_field(name="Members",        value=f"{total_members} total · {humans} humans · {bots} bots",    inline=True)
+    embed.add_field(name="Channels",       value=f"{total_channels} total · {channel_breakdown}",             inline=False)
+    embed.add_field(name="Roles",          value=str(role_count),                                             inline=True)
+    embed.add_field(name="Emojis",         value=f"{len(g.emojis)} / {g.emoji_limit}",                       inline=True)
+    embed.add_field(name="Stickers",       value=f"{len(g.stickers)} / {g.sticker_limit}",                   inline=True)
+    embed.add_field(name="Boost",          value=f"Level {boost_level} · {boosters} boosts",                 inline=True)
+    embed.add_field(name="Verification",   value=str(g.verification_level).replace("_", " ").title(),        inline=True)
+    embed.add_field(name="Content Filter", value=str(g.explicit_content_filter).replace("_", " ").title(),   inline=True)
 
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
