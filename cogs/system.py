@@ -1159,6 +1159,7 @@ async def status_cmd(interaction: discord.Interaction):
 
 @tree.command(name="serverinfo", description="View detailed information about this server.")
 @app_commands.default_permissions(moderate_members=True)
+@app_commands.check(check_admin)
 async def serverinfo_cmd(interaction: discord.Interaction):
     g = interaction.guild
     await g.fetch_channels()

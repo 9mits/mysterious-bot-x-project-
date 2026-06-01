@@ -766,10 +766,10 @@ def is_staff_member(member: discord.Member) -> bool:
     }
     if any(role.id in allowed for role in member.roles):
         return True
-    mod_roles = bot.data_manager.config.get("mod_roles", [])
+    mod_roles = conf.get("mod_roles", [])
     if any(role.id in mod_roles for role in member.roles):
         return True
-    return member.guild_permissions.moderate_members
+    return member.guild_permissions.administrator
 
 
 def is_staff(interaction: discord.Interaction) -> bool:
@@ -778,7 +778,7 @@ def is_staff(interaction: discord.Interaction) -> bool:
     mod_roles = bot.data_manager.config.get("mod_roles", [])
     if any(r.id in mod_roles for r in interaction.user.roles):
         return True
-    return interaction.user.guild_permissions.moderate_members
+    return interaction.user.guild_permissions.administrator
 
 
 

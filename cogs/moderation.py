@@ -1050,6 +1050,7 @@ async def unlock(interaction: discord.Interaction):
 
 @tree.command(name="mod-guide", description="View the moderation command guide.")
 @app_commands.default_permissions(moderate_members=True)
+@app_commands.check(_staff_check)
 async def mod_help(interaction: discord.Interaction):
     embed = build_mod_help_embed(interaction.guild)
     await interaction.response.send_message(embed=embed, ephemeral=True)

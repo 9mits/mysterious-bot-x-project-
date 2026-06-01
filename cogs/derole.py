@@ -6,6 +6,8 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from .shared import is_staff
+
 
 MAX_ROLE_SELECT = 25
 
@@ -169,9 +171,9 @@ class Derole(commands.Cog):
             )
             return
 
-        if not interaction.user.guild_permissions.manage_roles:
+        if not is_staff(interaction) and not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message(
-                "You need **Manage Roles** to use `/derole`.",
+                "You do not have permission to use `/derole`.",
                 ephemeral=True,
             )
             return

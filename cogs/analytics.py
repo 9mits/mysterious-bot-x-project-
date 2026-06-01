@@ -302,7 +302,7 @@ async def stats(interaction: discord.Interaction, target: Optional[discord.Membe
         conf.get("role_owner", DEFAULT_ROLE_OWNER),
         conf.get("role_community_manager", DEFAULT_ROLE_COMMUNITY_MANAGER)
     }
-    if not any(r.id in allowed for r in interaction.user.roles):
+    if not interaction.user.guild_permissions.administrator and not any(r.id in allowed for r in interaction.user.roles):
         await interaction.response.send_message(embed=make_embed("Access Denied", "> You do not have the required Admin role.", kind="error", scope=SCOPE_ANALYTICS, guild=interaction.guild), ephemeral=True)
         return
 
@@ -398,7 +398,7 @@ async def directory(interaction: discord.Interaction):
         conf.get("role_owner", DEFAULT_ROLE_OWNER),
         conf.get("role_community_manager", DEFAULT_ROLE_COMMUNITY_MANAGER)
     }
-    if not any(r.id in allowed for r in interaction.user.roles):
+    if not interaction.user.guild_permissions.administrator and not any(r.id in allowed for r in interaction.user.roles):
         await interaction.response.send_message(embed=make_embed("Access Denied", "> You do not have the required Admin role.", kind="error", scope=SCOPE_ANALYTICS, guild=interaction.guild), ephemeral=True)
         return
 
