@@ -770,7 +770,16 @@ class RoleActionSelect(discord.ui.Select):
             await interaction.response.send_modal(EditColorModal(self.member, self.role))
             return
         if action == "icon":
-            await interaction.response.send_message("Choose icon method:", view=UploadIconView(self.member, self.role), ephemeral=True)
+            embed = make_embed(
+                "Update Role Icon",
+                "> Choose how you'd like to set your role icon below.\n\n"
+                "**Upload File** — attach an image directly (max 256 KB).\n"
+                "**Enter URL** — paste a direct link to an image.",
+                kind="info",
+                scope=SCOPE_ROLES,
+                guild=interaction.guild,
+            )
+            await interaction.response.send_message(embed=embed, view=UploadIconView(self.member, self.role), ephemeral=True)
             return
         if action == "style":
             await interaction.response.send_message("Choose a role style:", view=RoleStyleView(self.member, self.role), ephemeral=True)
