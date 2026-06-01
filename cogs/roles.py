@@ -1185,7 +1185,7 @@ class RolePickerSelect(discord.ui.Select):
             ))
         if not at_limit:
             options.append(discord.SelectOption(
-                label="✦ Create New Role",
+                label="Create New Role",
                 value="__create__",
                 description="Add another custom role.",
             ))
