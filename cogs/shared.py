@@ -1061,20 +1061,15 @@ async def send_automod_log(
 
 def build_role_landing_embed(member: discord.Member, *, is_booster: bool, limit: int) -> discord.Embed:
     embed = make_embed(
-        "Custom Role",
-        "> Server boosters can create and personalize a custom role as a boost perk.",
+        "Custom Roles",
+        f"> You don't have any custom roles yet.\n> You can create up to **{limit}** custom role{'s' if limit != 1 else ''}.\n\n> Use the button below to get started — you can fully customize the name, color, icon, and style at any time.",
         kind="info",
         scope=SCOPE_ROLES,
         guild=member.guild,
         thumbnail=member.display_avatar.url,
     )
-    embed.add_field(name="Booster Slot", value=f"1 of {limit}", inline=True)
-    embed.add_field(name="Customizable", value="Name, color, icon, style", inline=True)
-    embed.add_field(
-        name="How It Works",
-        value="> 1. Create your role below.\n> 2. Adjust name, color, icon, and style at any time.\n> 3. Return to this panel whenever you want to make changes.",
-        inline=False,
-    )
+    embed.add_field(name="Slots Available", value=f"0 / {limit}", inline=True)
+    embed.add_field(name="Customizable", value="Name · Color · Icon · Style", inline=True)
     return embed
 
 

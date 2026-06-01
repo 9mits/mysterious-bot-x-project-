@@ -64,7 +64,7 @@ def build_role_info_embed(member: discord.Member, rec: dict, role_obj: Optional[
     color = discord.Color(int(color_hex.lstrip("#"), 16)) if hex_valid(color_hex) else EMBED_PALETTE["muted"]
     embed = make_embed(
         "Manage Your Custom Role",
-        "> Review and update your saved custom role configuration.",
+        f"> You're managing your custom role **{discord.utils.escape_markdown(role_obj.name if role_obj else rec.get('name', 'Unknown'))}**.\n> Use the menu below to rename it, update the color, icon, or style, or delete it.",
         kind="info" if color.value == 0 else "neutral",
         scope=SCOPE_ROLES,
         guild=member.guild,
@@ -1279,12 +1279,15 @@ async def role_cmd(interaction: discord.Interaction):
         await interaction.followup.send(embed=embed, view=EditView(interaction.user, role_obj), ephemeral=True)
     else:
         # Multiple roles, or 1 role with room to create more — show picker
+        slots_text = f"**{n} / {limit}** custom role{'s' if limit != 1 else ''} used."
+        action_text = "Select a role below to edit it, or create a new one to continue customizing your profile." if not at_limit else "Select a role below to manage or update it."
         embed = make_embed(
-            "Your Custom Roles",
-            f"> You have **{n}** custom role(s) (limit: **{limit}**).\n> Select a role to manage, or create a new one.",
+            "Manage Your Custom Roles",
+            f"> {slots_text}\n\n> {action_text}",
             kind="info",
             scope=SCOPE_ROLES,
             guild=interaction.guild,
+            thumbnail=interaction.user.display_avatar.url,
         )
         await interaction.followup.send(embed=embed, view=RolePickerView(interaction.user, valid_roles, at_limit), ephemeral=True)
 
