@@ -2188,13 +2188,16 @@ def _build_server_branding_embed(guild: discord.Guild) -> discord.Embed:
 
 class GlobalBrandingActionSelect(discord.ui.Select):
     def __init__(self):
+        user = bot.user
         options = [
             discord.SelectOption(label="Change Username", value="username", description="Update the global bot username."),
             discord.SelectOption(label="Change Avatar", value="avatar", description="Upload a global avatar from an image URL."),
             discord.SelectOption(label="Change Banner", value="banner", description="Upload a global banner from an image URL."),
-            discord.SelectOption(label="Remove Avatar", value="remove_avatar", description="Reset the global avatar."),
-            discord.SelectOption(label="Remove Banner", value="remove_banner", description="Clear the global banner."),
         ]
+        if user.avatar:
+            options.append(discord.SelectOption(label="╌ Remove Avatar", value="remove_avatar", description="Reset back to the default avatar."))
+        if user.banner:
+            options.append(discord.SelectOption(label="╌ Remove Banner", value="remove_banner", description="Clear the global banner."))
         super().__init__(placeholder="Choose a global branding action...", min_values=1, max_values=1, options=options)
 
     async def callback(self, interaction: discord.Interaction):
@@ -2226,19 +2229,25 @@ class GlobalBrandingView(discord.ui.View):
         super().__init__(timeout=180)
         self.add_item(GlobalBrandingActionSelect())
 
+    async def refresh(self, interaction: discord.Interaction):
+        await interaction.response.edit_message(embed=_build_global_branding_embed(), view=GlobalBrandingView())
+
 
 class ServerBrandingActionSelect(discord.ui.Select):
-    def __init__(self):
+    def __init__(self, guild: discord.Guild):
+        me = guild.me
         options = [
             discord.SelectOption(label="Change Nickname", value="nickname", description="Update the bot nickname for this server."),
             discord.SelectOption(label="Change Avatar", value="avatar", description="Upload a server avatar from an image URL."),
             discord.SelectOption(label="Change Banner", value="banner", description="Upload a server banner from an image URL."),
             discord.SelectOption(label="Change Bio", value="bio", description="Update the server-specific bot bio."),
-            discord.SelectOption(label="Clear Nickname", value="clear_nickname", description="Use the global bot username in this server."),
-            discord.SelectOption(label="Remove Avatar", value="remove_avatar", description="Revert this server to the global avatar."),
-            discord.SelectOption(label="Remove Banner", value="remove_banner", description="Clear the server-specific banner."),
-            discord.SelectOption(label="Clear Bio", value="clear_bio", description="Clear the server-specific bot bio."),
         ]
+        if me.nick:
+            options.append(discord.SelectOption(label="╌ Clear Nickname", value="clear_nickname", description="Revert back to the global bot username."))
+        if me.guild_avatar:
+            options.append(discord.SelectOption(label="╌ Remove Avatar", value="remove_avatar", description="Revert to the global bot avatar."))
+        if getattr(me, "guild_banner", None):
+            options.append(discord.SelectOption(label="╌ Remove Banner", value="remove_banner", description="Clear the server-specific banner."))
         super().__init__(placeholder="Choose a server branding action...", min_values=1, max_values=1, options=options)
 
     async def callback(self, interaction: discord.Interaction):
@@ -2267,17 +2276,17 @@ class ServerBrandingActionSelect(discord.ui.Select):
             elif action == "remove_banner":
                 await interaction.guild.me.edit(banner=None)
                 await interaction.followup.send(embed=make_embed("Banner Removed", "> Server banner removed.", kind="success", scope=SCOPE_SYSTEM, guild=interaction.guild), ephemeral=True)
-            elif action == "clear_bio":
-                await interaction.guild.me.edit(bio=None)
-                await interaction.followup.send(embed=make_embed("Bio Cleared", "> Server bio cleared.", kind="success", scope=SCOPE_SYSTEM, guild=interaction.guild), ephemeral=True)
         except discord.HTTPException as e:
             await interaction.followup.send(embed=make_embed("Failed", f"> Failed: {e}", kind="error", scope=SCOPE_SYSTEM, guild=interaction.guild), ephemeral=True)
 
 
 class ServerBrandingView(discord.ui.View):
-    def __init__(self):
+    def __init__(self, guild: discord.Guild):
         super().__init__(timeout=180)
-        self.add_item(ServerBrandingActionSelect())
+        self.add_item(ServerBrandingActionSelect(guild))
+
+    async def refresh(self, interaction: discord.Interaction):
+        await interaction.response.edit_message(embed=_build_server_branding_embed(interaction.guild), view=ServerBrandingView(interaction.guild))
 
 
 # ── Commands ──
@@ -2294,7 +2303,7 @@ async def branding_global(interaction: discord.Interaction):
 @branding_group.command(name="server", description="Edit this server's bot profile.")
 @app_commands.check(check_owner)
 async def branding_server(interaction: discord.Interaction):
-    await interaction.response.send_message(embed=_build_server_branding_embed(interaction.guild), view=ServerBrandingView(), ephemeral=True)
+    await interaction.response.send_message(embed=_build_server_branding_embed(interaction.guild), view=ServerBrandingView(interaction.guild), ephemeral=True)
 
 
 # ──────────────────────────────────────────────────────────────────
