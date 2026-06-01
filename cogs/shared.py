@@ -1069,7 +1069,6 @@ def build_role_landing_embed(member: discord.Member, *, is_booster: bool, limit:
         thumbnail=member.display_avatar.url,
     )
     embed.add_field(name="Slots Available", value=f"0 / {limit}", inline=True)
-    embed.add_field(name="Customizable", value="Name · Color · Icon · Style", inline=True)
     return embed
 
 
