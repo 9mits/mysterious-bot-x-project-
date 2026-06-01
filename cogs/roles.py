@@ -73,7 +73,6 @@ def build_role_info_embed(member: discord.Member, rec: dict, role_obj: Optional[
     if role_obj:
         embed.add_field(name="Role", value=f"{role_obj.mention}", inline=False)
         embed.add_field(name="Name", value=role_obj.name, inline=True)
-        embed.add_field(name="Members", value=str(len(role_obj.members)), inline=True)
         if rec.get("secondary_color"):
             embed.add_field(name="Secondary (Gradient)", value=f"`{rec.get('secondary_color')}`", inline=True)
         if rec.get("tertiary_color"):
@@ -105,10 +104,7 @@ def build_role_info_embed(member: discord.Member, rec: dict, role_obj: Optional[
     if include_tips:
         embed.add_field(
             name="Tips",
-            value=join_lines([
-                "Use the action menu below to update the name, colors, icon, and style.",
-                "If the icon URL fails, use the upload flow instead.",
-            ]),
+            value="> - Use the action menu below to update the name, colors, icon, and style.\n> - If the icon URL fails, use the upload flow instead.",
             inline=False,
         )
 
