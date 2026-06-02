@@ -70,7 +70,7 @@ CREATE TABLE IF NOT EXISTS punishments (
 CREATE INDEX IF NOT EXISTS idx_punishments_user ON punishments(user_id);
 
 CREATE TABLE IF NOT EXISTS roles (
-    role_id TEXT PRIMARY KEY,
+    user_id TEXT PRIMARY KEY,
     data    TEXT NOT NULL
 );
 
@@ -208,8 +208,21 @@ class DataManager:
         await db.execute("PRAGMA synchronous=NORMAL")
         await db.execute("PRAGMA temp_store=MEMORY")
         await db.executescript(_CREATE_TABLES_SQL)
+        await self._migrate_schema_columns(db)
         await db.commit()
         return db
+
+    async def _migrate_schema_columns(self, db: aiosqlite.Connection):
+        """Idempotent column renames for databases created before a rename.
+
+        The roles table is keyed by user_id but the column was historically
+        misnamed `role_id`; rename it in place if an old DB still has it.
+        """
+        async with db.execute("PRAGMA table_info(roles)") as cursor:
+            columns = {row["name"] async for row in cursor}
+        if "role_id" in columns and "user_id" not in columns:
+            await db.execute("ALTER TABLE roles RENAME COLUMN role_id TO user_id")
+            logger.info("Migration: renamed roles.role_id column to user_id")
 
     async def _db_conn(self) -> aiosqlite.Connection:
         if self._db is None:
@@ -266,10 +279,10 @@ class DataManager:
             try:
                 raw = read_json_file(ROLES_FILE, {})
                 if isinstance(raw, dict):
-                    for role_id, data in raw.items():
+                    for user_id, data in raw.items():
                         await db.execute(
-                            "INSERT OR IGNORE INTO roles(role_id, data) VALUES (?, ?)",
-                            (str(role_id), json.dumps(data)),
+                            "INSERT OR IGNORE INTO roles(user_id, data) VALUES (?, ?)",
+                            (str(user_id), json.dumps(data)),
                         )
                     logger.info("Migration: imported roles.json into SQLite")
                 ROLES_FILE.rename(ROLES_FILE.with_suffix(".json.bak"))
@@ -439,9 +452,9 @@ class DataManager:
 
     async def _save_roles_to_db(self, db: aiosqlite.Connection):
         await db.execute("DELETE FROM roles")
-        rows = [(str(role_id), json.dumps(data)) for role_id, data in self.roles.items()]
+        rows = [(str(user_id), json.dumps(data)) for user_id, data in self.roles.items()]
         if rows:
-            await db.executemany("INSERT INTO roles(role_id, data) VALUES (?, ?)", rows)
+            await db.executemany("INSERT INTO roles(user_id, data) VALUES (?, ?)", rows)
 
     async def _save_punishments_to_db(self, db: aiosqlite.Connection):
         await db.execute("DELETE FROM punishments")
@@ -560,7 +573,7 @@ class DataManager:
             self._dirty_config = True
 
         # ---- other sections ----
-        raw_roles = await self._load_simple_dict_from_db(db, "roles", "role_id")
+        raw_roles = await self._load_simple_dict_from_db(db, "roles", "user_id")
         # Migrate single-dict entries to lists
         self.roles = {
             uid: (v if isinstance(v, list) else [v])
