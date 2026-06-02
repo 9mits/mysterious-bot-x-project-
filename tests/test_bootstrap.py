@@ -57,7 +57,6 @@ class MbxBootstrapTests(unittest.TestCase):
                 {
                     "commands",
                     "mod-guide",
-                    "role-guide",
                     "role-settings",
                     "derole",
                     "modmail-panel",

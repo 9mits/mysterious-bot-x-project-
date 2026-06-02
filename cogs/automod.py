@@ -1557,7 +1557,7 @@ class AutoModStoredValueRemoveSelect(discord.ui.Select):
             settings[self.config_key] = [value for value in settings.get(self.config_key, []) if int(value) not in selected_ids]
             store_smart_automod_settings(settings)
         await bot.data_manager.save_config()
-        await interaction.response.edit_message(content="Removed the selected entries.", view=None)
+        await interaction.response.edit_message(embed=make_embed("Entries Removed", "> The selected entries have been removed.", kind="success", scope=SCOPE_MODERATION, guild=interaction.guild), view=None)
 
 
 class AutoModStoredValueRemoveView(discord.ui.View):

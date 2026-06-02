@@ -770,7 +770,7 @@ class FinalConfirmClear(discord.ui.View):
             log_embed = build_history_cleared_log_embed(interaction.guild, self.moderator, self.target, removed_records)
             await send_punishment_log(interaction.guild, log_embed, attachments=[attachment])
 
-            await interaction.response.edit_message(content="**History has been completely wiped.**", view=None)
+            await interaction.response.edit_message(embed=make_embed("History Cleared", "> The user's moderation history has been completely wiped.", kind="success", scope=SCOPE_MODERATION, guild=interaction.guild), view=None)
 
             if self.origin_message:
                 try:
@@ -779,11 +779,11 @@ class FinalConfirmClear(discord.ui.View):
                 except Exception:
                     pass
         else:
-            await interaction.response.edit_message(content="User has no history to clear.", view=None)
+            await interaction.response.edit_message(embed=make_embed("Nothing to Clear", "> This user has no history to clear.", kind="muted", scope=SCOPE_MODERATION, guild=interaction.guild), view=None)
 
     @discord.ui.button(label="No, Stop", style=discord.ButtonStyle.secondary)
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.edit_message(content="Clear history canceled.", view=None)
+        await interaction.response.edit_message(embed=make_embed("Cancelled", "> The history was not cleared.", kind="muted", scope=SCOPE_MODERATION, guild=interaction.guild), view=None)
 
 class HistorySelect(discord.ui.Select):
     def __init__(self, page_items: List[dict], panel: "HistoryView"):
@@ -1570,7 +1570,7 @@ class FirstConfirmClear(discord.ui.View):
 
     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.edit_message(content="Clear history canceled.", view=None)
+        await interaction.response.edit_message(embed=make_embed("Cancelled", "> The history was not cleared.", kind="muted", scope=SCOPE_MODERATION, guild=interaction.guild), view=None)
 
 class PunishView(discord.ui.View):
     def __init__(self, target, moderator, public=False, reaction_count=None):

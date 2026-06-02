@@ -104,6 +104,12 @@ import cogs.shared as _cogs_shared
 
 
 class MbxLegacyAuthTests(unittest.IsolatedAsyncioTestCase):
+    def assert_denied_embed(self, interaction):
+        interaction.response.send_message.assert_awaited_once()
+        _, kwargs = interaction.response.send_message.await_args
+        self.assertTrue(kwargs.get("ephemeral"))
+        self.assertIn("embed", kwargs)
+
     async def test_revoke_appeal_entrypoint_rejects_non_staff(self):
         interaction = make_interaction()
         view = legacy.RevokeAppealView(target_id=1, moderator_id=2, duration=0, timestamp="2026-01-01T00:00:00+00:00")
@@ -111,7 +117,7 @@ class MbxLegacyAuthTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(_cogs_roles, "is_staff", return_value=False):
             await view.children[0].callback(interaction)
 
-        interaction.response.send_message.assert_awaited_once_with("Access denied.", ephemeral=True)
+        self.assert_denied_embed(interaction)
 
     async def test_confirm_revoke_view_rejects_non_staff(self):
         interaction = make_interaction()
@@ -121,7 +127,7 @@ class MbxLegacyAuthTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(_cogs_roles, "is_staff", return_value=False):
             await view.children[0].callback(interaction)
 
-        interaction.response.send_message.assert_awaited_once_with("Access denied.", ephemeral=True)
+        self.assert_denied_embed(interaction)
         parent_view.finish_revoke.assert_not_awaited()
 
     async def test_deny_appeal_modal_rejects_non_staff(self):
@@ -135,7 +141,7 @@ class MbxLegacyAuthTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(_cogs_roles, "is_staff", return_value=False):
             await modal.on_submit(interaction)
 
-        interaction.response.send_message.assert_awaited_once_with("Access denied.", ephemeral=True)
+        self.assert_denied_embed(interaction)
 
     async def test_finish_revoke_rejects_non_staff(self):
         interaction = make_interaction()
@@ -144,7 +150,7 @@ class MbxLegacyAuthTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(_cogs_roles, "is_staff", return_value=False):
             await view.finish_revoke(interaction, SimpleNamespace(embeds=[SimpleNamespace()]))
 
-        interaction.response.send_message.assert_awaited_once_with("Access denied.", ephemeral=True)
+        self.assert_denied_embed(interaction)
 
     async def test_apply_automod_report_response_rejects_non_staff(self):
         interaction = make_interaction()

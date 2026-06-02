@@ -1059,7 +1059,7 @@ async def send_automod_log(
     )
 
 
-def build_role_landing_embed(member: discord.Member, *, is_booster: bool, limit: int) -> discord.Embed:
+def build_role_landing_embed(member: discord.Member, *, limit: int) -> discord.Embed:
     embed = make_embed(
         "Custom Roles",
         f"> You don't have any custom roles yet.\n> You can create up to **{limit}** custom role{'s' if limit != 1 else ''}.\n\n> Use the button below to get started — you can fully customize the name, color, icon, and style at any time.",

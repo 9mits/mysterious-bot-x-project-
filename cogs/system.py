@@ -245,7 +245,7 @@ class ArchiveConfirmView(discord.ui.View):
     @discord.ui.button(label="Yes, Archive", style=discord.ButtonStyle.danger)
     async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
         # Disable view immediately to prevent double-clicks
-        await interaction.response.edit_message(content="> Processing archive request...", view=None)
+        await interaction.response.edit_message(embed=make_embed("Processing", "> Processing the archive request...", kind="muted", scope=SCOPE_SYSTEM, guild=interaction.guild), view=None)
         
         # Save Config
         if "archived_channels" not in bot.data_manager.config: bot.data_manager.config["archived_channels"] = {}
@@ -288,7 +288,7 @@ class ArchiveConfirmView(discord.ui.View):
 
     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.edit_message(content="Archive operation cancelled.", view=None)
+        await interaction.response.edit_message(embed=make_embed("Archive Cancelled", "> The channel was not archived.", kind="muted", scope=SCOPE_SYSTEM, guild=interaction.guild), view=None)
         self.stop()
 
 class CloneConfirmView(discord.ui.View):
@@ -303,7 +303,7 @@ class CloneConfirmView(discord.ui.View):
 
     @discord.ui.button(label="Yes, Clone & Archive", style=discord.ButtonStyle.danger)
     async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.edit_message(content="> Processing clone & archive request...", view=None)
+        await interaction.response.edit_message(embed=make_embed("Processing", "> Processing the clone & archive request...", kind="muted", scope=SCOPE_SYSTEM, guild=interaction.guild), view=None)
         
         # 1. Clone the channel
         try:
@@ -364,7 +364,7 @@ class CloneConfirmView(discord.ui.View):
 
     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.edit_message(content="Clone operation cancelled.", view=None)
+        await interaction.response.edit_message(embed=make_embed("Clone Cancelled", "> The channel was not cloned or archived.", kind="muted", scope=SCOPE_SYSTEM, guild=interaction.guild), view=None)
         self.stop()
 
 
@@ -523,7 +523,7 @@ class AntiNukeResolveConfirm2(discord.ui.View):
             except Exception:
                 pass
 
-        await interaction.response.edit_message(content="**Action Resolved.** Original permissions/roles restored.", view=None)
+        await interaction.response.edit_message(embed=make_embed("Action Resolved", "> Original permissions and roles have been restored.", kind="success", scope=SCOPE_SYSTEM, guild=interaction.guild), view=None)
 
         embed = make_embed(
             "Security Alert: Anti-Nuke Resolved",

@@ -5,7 +5,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 import asyncio
-from typing import Optional, List, Union, Tuple
+from typing import Optional, List, Union
 
 from core.constants import (
     DEFAULT_ANCHOR_ROLE_ID,
@@ -317,7 +317,7 @@ class ConfirmRevokeView(discord.ui.View):
 
     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.edit_message(content="Revocation cancelled.", view=None)
+        await interaction.response.edit_message(embed=make_embed("Revocation Cancelled", "> No changes were made to this punishment.", kind="muted", scope=SCOPE_MODERATION, guild=interaction.guild), view=None)
 
 class DenyAppealModal(discord.ui.Modal, title="Deny Appeal"):
     reason = discord.ui.TextInput(label="Reason for Denial", style=discord.TextStyle.paragraph, required=True)
@@ -390,7 +390,7 @@ class RevokeAppealView(discord.ui.View):
         if not is_staff(interaction):
             await interaction.response.send_message(embed=make_embed("Access Denied", "> You do not have permission to use this.", kind="error", scope=SCOPE_MODERATION, guild=interaction.guild), ephemeral=True)
             return
-        await interaction.response.edit_message(content="Processing revocation...", view=None)
+        await interaction.response.edit_message(embed=make_embed("Processing", "> Processing the revocation request...", kind="muted", scope=SCOPE_MODERATION, guild=interaction.guild), view=None)
         
         guild = interaction.guild
         uid = str(self.target_id)
@@ -799,11 +799,13 @@ class RoleActionSelect(discord.ui.Select):
             await interaction.response.send_message(embed=make_embed("Role Style", "> Choose a role style below.", kind="info", scope=SCOPE_ROLES, guild=interaction.guild), view=RoleStyleView(self.member, self.role), ephemeral=True)
             return
         if action == "delete":
-            await interaction.response.send_message(embed=make_embed("Confirm Deletion", "> Are you sure you want to delete this role?", kind="warning", scope=SCOPE_ROLES, guild=interaction.guild), view=ConfirmDelete(self.member, self.role), ephemeral=True)
+            confirm_view = ConfirmDelete(self.member, self.role)
+            await interaction.response.send_message(embed=make_embed("Confirm Deletion", "> Are you sure you want to delete this role?", kind="warning", scope=SCOPE_ROLES, guild=interaction.guild), view=confirm_view, ephemeral=True)
+            confirm_view.message = await interaction.original_response()
 
 class EditView(discord.ui.View):
     def __init__(self, member, role):
-        super().__init__(timeout=None)
+        super().__init__(timeout=600)
         self.member = member
         self.role = role
         self.add_item(RoleActionSelect(member, role))
@@ -832,6 +834,17 @@ class ConfirmDelete(discord.ui.View):
         super().__init__(timeout=60)
         self.member = member
         self.role = role
+        self.message: Optional[discord.Message] = None
+
+    async def on_timeout(self):
+        if self.message:
+            try:
+                await self.message.edit(
+                    embed=make_embed("Deletion Timed Out", "> No action was taken. Re-run the menu to try again.", kind="muted", scope=SCOPE_ROLES, guild=self.member.guild),
+                    view=None,
+                )
+            except Exception:
+                pass
 
     @discord.ui.button(label="Confirm", style=discord.ButtonStyle.danger)
     async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -852,7 +865,7 @@ class ConfirmDelete(discord.ui.View):
 
     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.edit_message(content="Deletion canceled.", embed=None, view=None)
+        await interaction.response.edit_message(embed=make_embed("Deletion Cancelled", "> Your custom role was not deleted.", kind="muted", scope=SCOPE_ROLES, guild=interaction.guild), view=None)
         self.stop()
 
 
@@ -886,7 +899,7 @@ def build_role_permissions_overview_embed(guild: discord.Guild) -> discord.Embed
     conf = bot.data_manager.config
     embed = make_embed(
         "Custom Role Access Rules",
-        "> Current allow and block rules for the booster custom role system.",
+        "> Current allow and block rules for the custom role system.",
         kind="info",
         scope=SCOPE_ROLES,
         guild=guild,
@@ -910,76 +923,6 @@ def build_role_permissions_overview_embed(guild: discord.Guild) -> discord.Embed
     embed.add_field(name="Blocked Users", value=truncate_text(", ".join(f"<@{uid}>" for uid in bl_users) or "None", 1024), inline=False)
     bl_roles = conf.get("cr_blacklist_roles", [])
     embed.add_field(name="Blocked Roles", value=truncate_text(", ".join(f"<@&{rid}>" for rid in bl_roles) or "None", 1024), inline=False)
-    return embed
-
-
-def split_embed_entries(entries: List[str], *, limit: int = 1024) -> List[str]:
-    chunks: List[str] = []
-    current: List[str] = []
-    current_length = 0
-
-    for raw_entry in entries:
-        entry = truncate_text(raw_entry, min(limit, 950))
-        entry_length = len(entry)
-        if current and current_length + entry_length + 2 > limit:
-            chunks.append("\n\n".join(current))
-            current = [entry]
-            current_length = entry_length
-            continue
-        current.append(entry)
-        current_length = current_length + entry_length + (2 if len(current) > 1 else 0)
-
-    if current:
-        chunks.append("\n\n".join(current))
-    return chunks
-
-
-def build_custom_role_registry_entries(guild: discord.Guild) -> List[str]:
-    entries: List[Tuple[str, str]] = []
-    for uid, data in bot.data_manager.roles.items():
-        recs = data if isinstance(data, list) else [data]
-        owner = guild.get_member(int(uid)) if str(uid).isdigit() else None
-        owner_ref = owner.mention if owner else f"<@{uid}>"
-        for rec in recs:
-            rid = rec.get("role_id")
-            role = guild.get_role(rid) if rid else None
-            role_name = discord.utils.escape_markdown(str(role.name if role else rec.get("name", "Unknown") or "Unknown"))
-            role_ref = role.mention if role else f"`Missing role ({rid or 'unknown'})`"
-            entry_lines = [
-                f"**{truncate_text(role_name, 90)}**",
-                f"> Role: {role_ref}",
-                f"> Owner: {owner_ref}",
-            ]
-            if role is None:
-                entry_lines.append("> Status: Missing from server")
-            entries.append((role_name.lower(), "\n".join(entry_lines)))
-
-    entries.sort(key=lambda item: item[0])
-    return [entry for _, entry in entries]
-
-
-def add_custom_role_registry_fields(embed: discord.Embed, guild: discord.Guild, *, field_name: str = "Registry") -> int:
-    entries = build_custom_role_registry_entries(guild)
-    if not entries:
-        embed.add_field(name=field_name, value="No custom roles are currently tracked.", inline=False)
-        return 0
-
-    for index, chunk in enumerate(split_embed_entries(entries)):
-        name = field_name if index == 0 else f"{field_name} Cont."
-        embed.add_field(name=name, value=chunk, inline=False)
-    return len(entries)
-
-
-def build_role_registry_embed(guild: discord.Guild) -> discord.Embed:
-    embed = make_embed(
-        "Tracked Custom Roles",
-        "> Registry of current custom roles and their recorded owners.",
-        kind="warning",
-        scope=SCOPE_ROLES,
-        guild=guild,
-    )
-    total_roles = add_custom_role_registry_fields(embed, guild, field_name="Registry")
-    embed.add_field(name="Total Roles", value=str(total_roles), inline=True)
     return embed
 
 
@@ -1291,7 +1234,6 @@ async def role_cmd(interaction: discord.Interaction):
             raise e
     
     limit = get_custom_role_limit(interaction.user)
-    is_booster = interaction.user.premium_since is not None
 
     if limit <= 0:
         await interaction.followup.send(embed=make_embed("Access Denied", "> You don't have access to custom roles. Ask a staff member to grant you access via `/role settings`.", kind="error", scope=SCOPE_ROLES, guild=interaction.guild), ephemeral=True)
@@ -1330,7 +1272,7 @@ async def role_cmd(interaction: discord.Interaction):
 
     if n == 0:
         # No roles — show landing with Create button
-        embed = build_role_landing_embed(interaction.user, is_booster=is_booster, limit=max(1, limit))
+        embed = build_role_landing_embed(interaction.user, limit=max(1, limit))
         view = discord.ui.View()
         btn = discord.ui.Button(label="Create Role", style=discord.ButtonStyle.success)
         async def create_callback(inter: discord.Interaction):
@@ -1363,72 +1305,6 @@ async def role_manage(interaction: discord.Interaction, action: str, target: Opt
     await interaction.response.defer(ephemeral=True)
     conf = bot.data_manager.config
     
-    if action == "list_permission":
-        embed = make_embed(
-            "Custom Role Permissions",
-            "> Current whitelist and blacklist rules for personal role access.",
-            kind="info",
-            scope=SCOPE_ROLES,
-            guild=interaction.guild,
-        )
-        
-        # Whitelisted Users
-        wl_users = conf.get("cr_whitelist_users", {})
-        if wl_users:
-            lines = [f"<@{uid}>: {lim}" for uid, lim in wl_users.items()]
-            val = "\n".join(lines)
-            if len(val) > 1024: val = val[:1021] + "..."
-            embed.add_field(name="Whitelisted Users", value=val, inline=False)
-        else:
-            embed.add_field(name="Whitelisted Users", value="None", inline=False)
-
-        # Blacklisted Users
-        bl_users = conf.get("cr_blacklist_users", [])
-        if bl_users:
-            lines = [f"<@{uid}>" for uid in bl_users]
-            val = ", ".join(lines)
-            if len(val) > 1024: val = val[:1021] + "..."
-            embed.add_field(name="Blacklisted Users", value=val, inline=False)
-        else:
-            embed.add_field(name="Blacklisted Users", value="None", inline=False)
-
-        # Whitelisted Roles
-        wl_roles = conf.get("cr_whitelist_roles", {})
-        if wl_roles:
-            lines = [f"<@&{rid}>: {lim}" for rid, lim in wl_roles.items()]
-            val = "\n".join(lines)
-            if len(val) > 1024: val = val[:1021] + "..."
-            embed.add_field(name="Whitelisted Roles", value=val, inline=False)
-        else:
-            embed.add_field(name="Whitelisted Roles", value="None", inline=False)
-
-        # Blacklisted Roles
-        bl_roles = conf.get("cr_blacklist_roles", [])
-        if bl_roles:
-            lines = [f"<@&{rid}>" for rid in bl_roles]
-            val = ", ".join(lines)
-            if len(val) > 1024: val = val[:1021] + "..."
-            embed.add_field(name="Blacklisted Roles", value=val, inline=False)
-        else:
-            embed.add_field(name="Blacklisted Roles", value="None", inline=False)
-            
-        await interaction.followup.send(embed=embed, ephemeral=True)
-        return
-
-    if action == "list_all":
-        # List all custom roles
-        embed = make_embed(
-            "Server Custom Roles Registry",
-            "> Inventory of tracked custom roles and their recorded owners.",
-            kind="warning",
-            scope=SCOPE_ROLES,
-            guild=interaction.guild,
-        )
-        total_roles = add_custom_role_registry_fields(embed, interaction.guild, field_name="Tracked Roles")
-        embed.add_field(name="Total Roles", value=str(total_roles), inline=True)
-        await interaction.followup.send(embed=embed, ephemeral=True)
-        return
-
     if action == "manage_user":
         if not isinstance(target, discord.Member):
             await interaction.followup.send(embed=make_embed("Invalid Target", "> Target must be a user.", kind="error", scope=SCOPE_ROLES, guild=interaction.guild), ephemeral=True)
