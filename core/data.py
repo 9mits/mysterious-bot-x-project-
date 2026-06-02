@@ -215,6 +215,11 @@ class DataManager:
         DB_DIR.mkdir(parents=True, exist_ok=True)
         db = await aiosqlite.connect(DB_FILE)
         db.row_factory = aiosqlite.Row
+        # WAL keeps reads non-blocking during writes; NORMAL avoids an fsync
+        # on every commit (durable enough for a bot, much faster on writes).
+        await db.execute("PRAGMA journal_mode=WAL")
+        await db.execute("PRAGMA synchronous=NORMAL")
+        await db.execute("PRAGMA temp_store=MEMORY")
         await db.executescript(_CREATE_TABLES_SQL)
         await db.commit()
         return db
@@ -571,22 +576,19 @@ class DataManager:
 
     async def _save_config_to_db(self, db: aiosqlite.Connection):
         await db.execute("DELETE FROM config")
-        for k, v in self.config.items():
-            await db.execute(
-                "INSERT INTO config(key, value) VALUES (?, ?)",
-                (k, json.dumps(v)),
-            )
+        rows = [(k, json.dumps(v)) for k, v in self.config.items()]
+        if rows:
+            await db.executemany("INSERT INTO config(key, value) VALUES (?, ?)", rows)
 
     async def _save_roles_to_db(self, db: aiosqlite.Connection):
         await db.execute("DELETE FROM roles")
-        for role_id, data in self.roles.items():
-            await db.execute(
-                "INSERT INTO roles(role_id, data) VALUES (?, ?)",
-                (str(role_id), json.dumps(data)),
-            )
+        rows = [(str(role_id), json.dumps(data)) for role_id, data in self.roles.items()]
+        if rows:
+            await db.executemany("INSERT INTO roles(role_id, data) VALUES (?, ?)", rows)
 
     async def _save_punishments_to_db(self, db: aiosqlite.Connection):
         await db.execute("DELETE FROM punishments")
+        rows = []
         for user_id, records in self.punishments.items():
             if not isinstance(records, list):
                 continue
@@ -596,45 +598,40 @@ class DataManager:
                 case_id = record.get("case_id")
                 if not isinstance(case_id, int) or case_id <= 0:
                     continue
-                await db.execute(
-                    "INSERT OR REPLACE INTO punishments(case_id, user_id, data) VALUES (?, ?, ?)",
-                    (case_id, str(user_id), json.dumps(record)),
-                )
+                rows.append((case_id, str(user_id), json.dumps(record)))
+        if rows:
+            await db.executemany(
+                "INSERT OR REPLACE INTO punishments(case_id, user_id, data) VALUES (?, ?, ?)",
+                rows,
+            )
 
     async def _save_mod_stats_to_db(self, db: aiosqlite.Connection):
         await db.execute("DELETE FROM mod_stats")
-        for user_id, data in self.mod_stats.items():
-            await db.execute(
-                "INSERT INTO mod_stats(user_id, data) VALUES (?, ?)",
-                (str(user_id), json.dumps(data)),
-            )
+        rows = [(str(user_id), json.dumps(data)) for user_id, data in self.mod_stats.items()]
+        if rows:
+            await db.executemany("INSERT INTO mod_stats(user_id, data) VALUES (?, ?)", rows)
 
     async def _save_pings_to_db(self, db: aiosqlite.Connection):
         await db.execute("DELETE FROM pings")
-        for user_id, data in self.pings.items():
-            await db.execute(
-                "INSERT INTO pings(user_id, data) VALUES (?, ?)",
-                (str(user_id), json.dumps(data)),
-            )
+        rows = [(str(user_id), json.dumps(data)) for user_id, data in self.pings.items()]
+        if rows:
+            await db.executemany("INSERT INTO pings(user_id, data) VALUES (?, ?)", rows)
 
     async def _save_modmail_to_db(self, db: aiosqlite.Connection):
         await db.execute("DELETE FROM modmail")
-        for user_id, data in self.modmail.items():
-            await db.execute(
-                "INSERT INTO modmail(user_id, data) VALUES (?, ?)",
-                (str(user_id), json.dumps(data)),
-            )
+        rows = [(str(user_id), json.dumps(data)) for user_id, data in self.modmail.items()]
+        if rows:
+            await db.executemany("INSERT INTO modmail(user_id, data) VALUES (?, ?)", rows)
 
     async def _save_lockdown_to_db(self, db: aiosqlite.Connection):
         await db.execute("DELETE FROM lockdown")
-        for channel_id, data in self.lockdown.items():
-            await db.execute(
-                "INSERT INTO lockdown(channel_id, data) VALUES (?, ?)",
-                (str(channel_id), json.dumps(data)),
-            )
+        rows = [(str(channel_id), json.dumps(data)) for channel_id, data in self.lockdown.items()]
+        if rows:
+            await db.executemany("INSERT INTO lockdown(channel_id, data) VALUES (?, ?)", rows)
 
     async def _save_message_cache_to_db(self, db: aiosqlite.Connection):
         await db.execute("DELETE FROM message_cache")
+        rows = []
         for msg in self._serialize_message_cache():
             msg_id = msg.get("id")
             try:
@@ -644,9 +641,11 @@ class DataManager:
             created_at = msg.get("created_at", "")
             if not isinstance(created_at, str):
                 created_at = ""
-            await db.execute(
+            rows.append((msg_id, created_at, json.dumps(msg)))
+        if rows:
+            await db.executemany(
                 "INSERT OR REPLACE INTO message_cache(message_id, created_at, data) VALUES (?, ?, ?)",
-                (msg_id, created_at, json.dumps(msg)),
+                rows,
             )
 
     # ------------------------------------------------------------------
