@@ -161,7 +161,10 @@ class MGXBot(commands.Bot):
 
     @tasks.loop(minutes=30)
     async def status_task(self):
-        await self.change_presence(activity=discord.Game(name="DM for modmail"))
+        # "Listening to DMs for support" — reads cleanly and reflects modmail
+        await self.change_presence(
+            activity=discord.Activity(type=discord.ActivityType.listening, name="DMs for support")
+        )
 
     @tasks.loop(minutes=10)
     async def modmail_sla_task(self):
