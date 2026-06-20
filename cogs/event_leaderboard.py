@@ -403,8 +403,8 @@ class EventLeaderboardCog(commands.Cog):
 
         description = (
             f"{board}\n\n"
-            f"{bar}\n"
-            f"**{active_hours:,.1f}** / {goal:,} hours of voice activity ({min(100, pct * 100):.1f}%)"
+            f"> {bar}\n"
+            f"> -# **{active_hours:,.1f}** / {goal:,} hours of voice activity ({min(100, pct * 100):.1f}%)"
         )
 
         return make_embed(
