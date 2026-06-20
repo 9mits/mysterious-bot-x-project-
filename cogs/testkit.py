@@ -1,8 +1,9 @@
 """
 testkit.py — Test-only cog loaded exclusively when TEST_MODE=1.
 
-All commands here are guild-scoped to the configured guild and require
-admin/owner role so they never appear in production bots.
+Commands are registered globally (they only exist on the test bot, which is
+loaded only under TEST_MODE) and require admin/owner role. Run !sync on the
+test bot to make them appear in a guild immediately.
 """
 from __future__ import annotations
 
@@ -14,7 +15,6 @@ from discord import app_commands
 from discord.ext import commands
 
 from core.constants import (
-    DEFAULT_GUILD_ID,
     DEFAULT_ROLE_ADMIN,
     DEFAULT_ROLE_OWNER,
 )
@@ -51,7 +51,6 @@ class TestkitCog(commands.Cog):
 @tree.command(
     name="test-ping",
     description="[TEST] Show bot latency and uptime.",
-    guild=discord.Object(id=DEFAULT_GUILD_ID),
 )
 async def test_ping(interaction: discord.Interaction) -> None:
     """Latency and uptime snapshot."""
@@ -74,7 +73,6 @@ async def test_ping(interaction: discord.Interaction) -> None:
 @tree.command(
     name="test-dbstats",
     description="[TEST] Show in-memory data counts for each store.",
-    guild=discord.Object(id=DEFAULT_GUILD_ID),
 )
 async def test_dbstats(interaction: discord.Interaction) -> None:
     """Row counts for every in-memory data store."""
@@ -104,7 +102,6 @@ async def test_dbstats(interaction: discord.Interaction) -> None:
 @tree.command(
     name="test-config-dump",
     description="[TEST] Dump the current in-memory config as JSON (ephemeral).",
-    guild=discord.Object(id=DEFAULT_GUILD_ID),
 )
 async def test_config_dump(interaction: discord.Interaction) -> None:
     """Full config dump — ephemeral so it doesn't leak in chat."""
@@ -127,7 +124,6 @@ async def test_config_dump(interaction: discord.Interaction) -> None:
 @tree.command(
     name="test-simulate-punishment",
     description="[TEST] Dry-run punishment logic for a user without applying it.",
-    guild=discord.Object(id=DEFAULT_GUILD_ID),
 )
 @app_commands.describe(
     member="Target member",
@@ -183,7 +179,6 @@ async def test_simulate_punishment(
 @tree.command(
     name="test-flush-cache",
     description="[TEST] Clear the native automod event cache and DM cooldowns.",
-    guild=discord.Object(id=DEFAULT_GUILD_ID),
 )
 async def test_flush_cache(interaction: discord.Interaction) -> None:
     """Wipe runtime caches so you can re-trigger automod flows cleanly."""
@@ -208,7 +203,6 @@ async def test_flush_cache(interaction: discord.Interaction) -> None:
 @tree.command(
     name="test-user-history",
     description="[TEST] Show raw punishment records for a user.",
-    guild=discord.Object(id=DEFAULT_GUILD_ID),
 )
 @app_commands.describe(member="Target member")
 async def test_user_history(
@@ -244,7 +238,6 @@ async def test_user_history(
 @tree.command(
     name="test-sysinfo",
     description="[TEST] Show Python version, discord.py version, and host info.",
-    guild=discord.Object(id=DEFAULT_GUILD_ID),
 )
 async def test_sysinfo(interaction: discord.Interaction) -> None:
     """Runtime environment info — handy when debugging version-specific issues."""
@@ -266,3 +259,13 @@ async def test_sysinfo(interaction: discord.Interaction) -> None:
 
 async def setup(bot_instance: commands.Bot) -> None:
     await bot_instance.add_cog(TestkitCog(bot_instance))
+    for command in (
+        test_ping,
+        test_dbstats,
+        test_config_dump,
+        test_simulate_punishment,
+        test_flush_cache,
+        test_user_history,
+        test_sysinfo,
+    ):
+        bot_instance.tree.add_command(command)

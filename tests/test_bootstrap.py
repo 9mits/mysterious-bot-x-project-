@@ -29,9 +29,23 @@ class MbxBootstrapTests(unittest.TestCase):
             "cogs.admin",
             "cogs.events",
             "cogs.event_leaderboard",
+            "cogs.testkit",
         ):
             module = importlib.import_module(module_name)
             self.assertTrue(hasattr(module, "setup"))
+
+    def test_testkit_loads_and_registers_commands(self):
+        # testkit is only loaded at runtime under TEST_MODE, so it is not in
+        # EXTENSIONS and would otherwise never be exercised by the suite. This
+        # guards against import-time crashes and missing command registration.
+        async def runner():
+            bot = create_bot()
+            await bot.load_extension("cogs.testkit")
+            names = {command.name for command in bot.tree.get_commands()}
+            self.assertIn("test-ping", names)
+            self.assertIn("test-sysinfo", names)
+
+        asyncio.run(runner())
 
     def test_setup_exposes_modmail_panel_controls(self):
         channel_select = ConfigTypeSelect("channels")
