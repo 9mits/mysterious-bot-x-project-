@@ -26,7 +26,8 @@ class MbxBootstrapTests(unittest.TestCase):
             "cogs.automod",
             "cogs.config",
             "cogs.analytics",
-            "cogs.system",
+            "cogs.admin",
+            "cogs.events",
         ):
             module = importlib.import_module(module_name)
             self.assertTrue(hasattr(module, "setup"))

@@ -1,5 +1,4 @@
-# modules/commands/moderation.py
-# Punishment execution, punishment views, ModGroup slash commands, context menus.
+"""Punishment execution, ModGroup slash commands, and moderation context menus."""
 
 import discord
 from discord import app_commands
@@ -40,12 +39,10 @@ from .cases import (
     build_no_history_embed,
     build_active_punishments_embed,
     build_mod_help_embed,
-    HistoryView,
-    CasePanelView,
-    FirstConfirmClear,
-    ActiveView,
 )
-from .roles import AppealView
+from .history import HistoryView
+from .case_panel import CasePanelView, FirstConfirmClear, ActiveView
+from .roles import AppealView, build_punish_embed
 
 async def execute_punishment(interaction, target, moderator, reason, minutes, note, user_msg, is_escalated, origin_message=None, punishment_type="auto", public=False):
     uid = str(target.id)
@@ -241,7 +238,6 @@ async def execute_punishment(interaction, target, moderator, reason, minutes, no
     
     if origin_message:
         try:
-            from .roles import build_punish_embed
             await origin_message.edit(embed=build_punish_embed(target))
         except Exception:
             pass
@@ -279,7 +275,7 @@ class PunishDetailsModal(discord.ui.Modal):
         required=False
     )
 
-    async def on_submit(self, interaction: discord.Interaction):
+    async def on_submit(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
         
         reason = self.reason
@@ -391,7 +387,7 @@ class CustomPunishDetailsModal(discord.ui.Modal):
         )
         self.add_item(self.mod_message)
 
-    async def on_submit(self, interaction: discord.Interaction):
+    async def on_submit(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
         
         minutes = 0
@@ -491,7 +487,7 @@ class CustomTypeSelect(discord.ui.Select):
         ]
         super().__init__(placeholder="Select punishment type...", min_values=1, max_values=1, options=options)
 
-    async def callback(self, interaction: discord.Interaction):
+    async def callback(self, interaction: discord.Interaction) -> None:
         p_type = self.values[0]
         await interaction.response.send_modal(CustomPunishDetailsModal(self.target, self.moderator, p_type, self.origin_message, public=self.public, reaction_count=self.reaction_count))
 
@@ -519,7 +515,7 @@ class PunishSelect(discord.ui.Select):
         options.append(discord.SelectOption(label="Custom Punishment", value="custom", description="Define custom reason and duration"))
         super().__init__(placeholder="Select a punishment reason...", min_values=1, max_values=1, options=options)
 
-    async def callback(self, interaction: discord.Interaction):
+    async def callback(self, interaction: discord.Interaction) -> None:
         if self.values[0] == "custom":
             await interaction.response.send_message(embed=make_embed("Custom Punishment", "> Select the type of custom punishment below.", kind="info", scope=SCOPE_MODERATION, guild=interaction.guild), view=CustomTypeView(self.target, self.moderator, interaction.message, public=self.public, reaction_count=self.reaction_count), ephemeral=True)
             return
@@ -539,7 +535,7 @@ class PunishView(discord.ui.View):
         self.add_item(PunishSelect(target, moderator, public=public, reaction_count=reaction_count))
 
     @discord.ui.button(label="Clear History", style=discord.ButtonStyle.danger, row=1)
-    async def clear_history(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def clear_history(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         await interaction.response.send_message(
             embed=make_embed("Confirm Clear", "> Are you sure you want to clear this user's punishment history?", kind="warning", scope=SCOPE_MODERATION, guild=interaction.guild),
             view=FirstConfirmClear(self.target, self.moderator, interaction.message),
@@ -547,7 +543,7 @@ class PunishView(discord.ui.View):
         )
 
     @discord.ui.button(label="View History", style=discord.ButtonStyle.secondary, row=1)
-    async def view_history(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def view_history(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         member = self.target if isinstance(self.target, discord.Member) else await resolve_member(interaction.guild, self.target.id)
         if not member:
             await interaction.response.send_message(embed=make_embed("User Left Server", "> This user is no longer in the server, so the interactive history panel is unavailable.", kind="info", scope=SCOPE_MODERATION, guild=interaction.guild), ephemeral=True)
@@ -573,7 +569,7 @@ class RevokeUndoView(discord.ui.View):
         self.actor_id = actor_id
 
     @discord.ui.button(label="Revoke Undo", style=discord.ButtonStyle.danger)
-    async def revoke_undo(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def revoke_undo(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         if not is_staff(interaction):
              await interaction.response.send_message(embed=make_embed("Access Denied", "> You do not have permission to use this.", kind="error", scope=SCOPE_MODERATION, guild=interaction.guild), ephemeral=True)
              return
@@ -616,7 +612,6 @@ class RevokeUndoView(discord.ui.View):
 
 async def show_punish_menu(interaction: discord.Interaction, user: discord.User, public=False, reaction_count=None):
     await interaction.response.defer(ephemeral=True)
-    from .roles import build_punish_embed
     embed = build_punish_embed(user)
     view = PunishView(user, interaction.user, public=public, reaction_count=reaction_count)
     await interaction.followup.send(embed=embed, view=view, ephemeral=True)
@@ -722,7 +717,7 @@ async def _resolve_selected_member(interaction: discord.Interaction, selected_us
 class CaseIdModal(discord.ui.Modal, title="Open Case by ID"):
     case_id = discord.ui.TextInput(label="Case ID", placeholder="123", max_length=12)
 
-    async def on_submit(self, interaction: discord.Interaction):
+    async def on_submit(self, interaction: discord.Interaction) -> None:
         try:
             selected_case_id = int(self.case_id.value.strip())
         except ValueError:
@@ -741,7 +736,7 @@ class ModerationTargetSelect(discord.ui.UserSelect):
         )
         self._target_view = parent
 
-    async def callback(self, interaction: discord.Interaction):
+    async def callback(self, interaction: discord.Interaction) -> None:
         await self._target_view.handle_user(interaction, self.values[0])
 
 
@@ -790,7 +785,7 @@ class CaseIdButton(discord.ui.Button):
     def __init__(self):
         super().__init__(label="Open by Case ID", style=discord.ButtonStyle.secondary, row=1)
 
-    async def callback(self, interaction: discord.Interaction):
+    async def callback(self, interaction: discord.Interaction) -> None:
         await interaction.response.send_modal(CaseIdModal())
 
 

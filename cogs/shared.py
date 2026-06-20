@@ -1,5 +1,4 @@
-# modules/commands/shared.py
-# Shared utilities, embed helpers, logging, and permission helpers.
+"""Shared embed helpers, log senders, and permission checks used across all cogs."""
 
 import discord
 import aiohttp
@@ -963,8 +962,7 @@ async def send_modmail_panel_message(
                 embed.add_field(name="Quick Note", value=note_value, inline=False)
         return embed
 
-    # Lazy import to avoid circular dependency: modmail.py imports from shared.py
-    from .modmail import ModmailPanelView  # noqa: PLC0415
+    from .modmail import ModmailPanelView  # noqa: PLC0415 — shared↔modmail mutual dependency
 
     if MODMAIL_PANEL_BANNER_FILE.is_file():
         embed = make_panel_embed()
@@ -1420,8 +1418,7 @@ async def punish_rogue_mod(guild: discord.Guild, member: discord.User, reason: s
     if restore_data:
         restore_data["stripped_roles"] = stripped_ids
         restore_data["actor_id"] = member.id
-        # Lazy import to avoid circular dependency
-        from .system import AntiNukeResolveView  # noqa: PLC0415
+        from .admin import AntiNukeResolveView  # noqa: PLC0415 — shared↔admin mutual dependency
         view = AntiNukeResolveView(restore_data)
         
     # Dynamic pings

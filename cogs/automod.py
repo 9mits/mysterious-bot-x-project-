@@ -1,5 +1,4 @@
-# modules/commands/automod.py
-# Native and smart AutoMod logic, policy views, report views, and /automod command.
+"""Native and smart AutoMod engine, policy views, report flows, and /automod command."""
 
 import discord
 from discord import app_commands
@@ -1100,7 +1099,7 @@ class AutoModPolicyReasonModal(discord.ui.Modal, title="Edit AutoMod Reason Temp
             _, policy, _ = get_native_rule_override(settings, rule)
         self.reason_template.default = str(policy.get("reason_template", DEFAULT_NATIVE_AUTOMOD_SETTINGS["default_escalation"]["reason_template"]))
 
-    async def on_submit(self, interaction: discord.Interaction):
+    async def on_submit(self, interaction: discord.Interaction) -> None:
         settings = get_native_automod_settings(bot.data_manager.config)
         if self.rule is None:
             await interaction.response.edit_message(embed=build_automod_dashboard_embed(interaction.guild), view=AutoModDashboardView())
@@ -1149,7 +1148,7 @@ class AutoModStepValuesModal(discord.ui.Modal, title="Edit AutoMod Step"):
         else:
             self.timeout_length.default = ""
 
-    async def on_submit(self, interaction: discord.Interaction):
+    async def on_submit(self, interaction: discord.Interaction) -> None:
         policy = self.parent_view.get_current_policy()
         steps = self.parent_view.get_current_steps()
         if not steps:
@@ -1201,7 +1200,7 @@ class AutoModStepSelect(discord.ui.Select):
             )
         super().__init__(placeholder="Choose which step to edit...", min_values=1, max_values=1, options=options[:25], row=0)
 
-    async def callback(self, interaction: discord.Interaction):
+    async def callback(self, interaction: discord.Interaction) -> None:
         step_index = int(self.values[0])
         view = AutoModPolicyEditorView(rule=self.parent_view.rule, rules=self.parent_view.rules, step_index=step_index)
         await interaction.response.edit_message(embed=view.build_embed(interaction.guild), view=view)
@@ -1229,7 +1228,7 @@ class AutoModRuleSelect(discord.ui.Select):
             )
         super().__init__(placeholder="Choose a native AutoMod rule...", min_values=1, max_values=1, options=options, row=0)
 
-    async def callback(self, interaction: discord.Interaction):
+    async def callback(self, interaction: discord.Interaction) -> None:
         selected = next((rule for rule in self.rules if str(rule.id) == self.values[0]), None)
         if selected is None:
             await respond_with_error(interaction, "That AutoMod rule could not be found anymore.", scope=SCOPE_MODERATION)
@@ -1243,7 +1242,7 @@ class AutoModBridgeSettingsView(discord.ui.View):
         super().__init__(timeout=180)
         self.sync_buttons()
 
-    def sync_buttons(self):
+    def sync_buttons(self) -> None:
         settings = get_native_automod_settings(bot.data_manager.config)
         self.toggle_bridge.label = f"Bot Response: {'On' if settings.get('enabled', True) else 'Off'}"
         self.toggle_bridge.style = discord.ButtonStyle.success if settings.get("enabled", True) else discord.ButtonStyle.secondary
@@ -1252,32 +1251,32 @@ class AutoModBridgeSettingsView(discord.ui.View):
         self.toggle_report.label = f"Report Button: {'On' if settings.get('report_button_enabled', True) else 'Off'}"
         self.toggle_report.style = discord.ButtonStyle.success if settings.get("report_button_enabled", True) else discord.ButtonStyle.secondary
 
-    async def _save_and_refresh(self, interaction: discord.Interaction, settings: dict):
+    async def _save_and_refresh(self, interaction: discord.Interaction, settings: dict) -> None:
         store_native_automod_settings(settings)
         await bot.data_manager.save_config()
         self.sync_buttons()
         await interaction.response.edit_message(embed=build_automod_bridge_embed(interaction.guild), view=self)
 
     @discord.ui.button(label="Bot Response", style=discord.ButtonStyle.secondary, row=0)
-    async def toggle_bridge(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def toggle_bridge(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         settings = get_native_automod_settings(bot.data_manager.config)
         settings["enabled"] = not settings.get("enabled", True)
         await self._save_and_refresh(interaction, settings)
 
     @discord.ui.button(label="User DMs", style=discord.ButtonStyle.secondary, row=0)
-    async def toggle_dm(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def toggle_dm(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         settings = get_native_automod_settings(bot.data_manager.config)
         settings["warning_dm_enabled"] = not settings.get("warning_dm_enabled", True)
         await self._save_and_refresh(interaction, settings)
 
     @discord.ui.button(label="Report Button", style=discord.ButtonStyle.secondary, row=0)
-    async def toggle_report(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def toggle_report(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         settings = get_native_automod_settings(bot.data_manager.config)
         settings["report_button_enabled"] = not settings.get("report_button_enabled", True)
         await self._save_and_refresh(interaction, settings)
 
     @discord.ui.button(label="Back", style=discord.ButtonStyle.secondary, row=1)
-    async def back(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def back(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         await interaction.response.edit_message(embed=build_automod_dashboard_embed(interaction.guild), view=AutoModDashboardView())
 
 
@@ -1289,13 +1288,13 @@ class AutoModRuleBrowserView(discord.ui.View):
             self.add_item(AutoModRuleSelect(self, self.rules))
 
     @discord.ui.button(label="Refresh Rules", style=discord.ButtonStyle.secondary, row=1)
-    async def refresh(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def refresh(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         rules = await fetch_native_automod_rules(interaction.guild)
         view = AutoModRuleBrowserView(rules)
         await interaction.response.edit_message(embed=build_automod_rule_browser_embed(interaction.guild, rules), view=view)
 
     @discord.ui.button(label="Back", style=discord.ButtonStyle.secondary, row=1)
-    async def back(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def back(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         await interaction.response.edit_message(embed=build_automod_dashboard_embed(interaction.guild), view=AutoModDashboardView())
 
 
@@ -1353,7 +1352,7 @@ class AutoModPolicyEditorView(discord.ui.View):
             selected_step_index=self.step_index if self.get_current_steps() else None,
         )
 
-    def sync_buttons(self):
+    def sync_buttons(self) -> None:
         settings = get_native_automod_settings(bot.data_manager.config)
         enabled = False
         using_override = False
@@ -1371,7 +1370,7 @@ class AutoModPolicyEditorView(discord.ui.View):
         self.clear_override.disabled = self.rule is None or not using_override
         self.clear_override.style = discord.ButtonStyle.secondary if self.clear_override.disabled else discord.ButtonStyle.danger
 
-    async def persist_policy(self, policy: dict):
+    async def persist_policy(self, policy: dict) -> None:
         settings = get_native_automod_settings(bot.data_manager.config)
         if self.rule is None:
             return
@@ -1386,14 +1385,14 @@ class AutoModPolicyEditorView(discord.ui.View):
         store_native_automod_settings(settings)
         await bot.data_manager.save_config()
 
-    async def save_policy(self, interaction: discord.Interaction, policy: dict):
+    async def save_policy(self, interaction: discord.Interaction, policy: dict) -> None:
         if self.rule is None:
             await interaction.response.edit_message(embed=build_automod_dashboard_embed(interaction.guild), view=AutoModDashboardView())
             return
         await self.persist_policy(policy)
 
     @discord.ui.button(label="Auto Punish", style=discord.ButtonStyle.secondary, row=1)
-    async def toggle_enabled(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def toggle_enabled(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         settings = get_native_automod_settings(bot.data_manager.config)
         if self.rule is None:
             await interaction.response.edit_message(embed=build_automod_dashboard_embed(interaction.guild), view=AutoModDashboardView())
@@ -1409,7 +1408,7 @@ class AutoModPolicyEditorView(discord.ui.View):
         await interaction.response.edit_message(embed=view.build_embed(interaction.guild), view=view)
 
     @discord.ui.button(label="Add Step", style=discord.ButtonStyle.primary, row=1)
-    async def add_step(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def add_step(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         settings = get_native_automod_settings(bot.data_manager.config)
         if self.rule is None:
             await interaction.response.edit_message(embed=build_automod_dashboard_embed(interaction.guild), view=AutoModDashboardView())
@@ -1427,15 +1426,15 @@ class AutoModPolicyEditorView(discord.ui.View):
         await interaction.response.edit_message(embed=view.build_embed(interaction.guild), view=view)
 
     @discord.ui.button(label="Edit Step", style=discord.ButtonStyle.primary, row=1)
-    async def custom_amounts(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def custom_amounts(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         await interaction.response.send_modal(AutoModStepValuesModal(parent_view=self))
 
     @discord.ui.button(label="Edit Reason", style=discord.ButtonStyle.secondary, row=2)
-    async def edit_reason(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def edit_reason(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         await interaction.response.send_modal(AutoModPolicyReasonModal(rule=self.rule, rules=self.rules))
 
     @discord.ui.button(label="Remove Step", style=discord.ButtonStyle.danger, row=2)
-    async def remove_step(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def remove_step(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         policy = self.get_current_policy()
         steps = self.get_current_steps()
         if not steps:
@@ -1452,7 +1451,7 @@ class AutoModPolicyEditorView(discord.ui.View):
         await interaction.response.edit_message(embed=view.build_embed(interaction.guild), view=view)
 
     @discord.ui.button(label="Reset Rule", style=discord.ButtonStyle.danger, row=2)
-    async def clear_override(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def clear_override(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         if self.rule is None:
             await interaction.response.defer()
             return
@@ -1468,7 +1467,7 @@ class AutoModPolicyEditorView(discord.ui.View):
         await interaction.response.edit_message(embed=view.build_embed(interaction.guild), view=view)
 
     @discord.ui.button(label="Back", style=discord.ButtonStyle.secondary, row=3)
-    async def back(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def back(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         if self.rule is None:
             await interaction.response.edit_message(embed=build_automod_dashboard_embed(interaction.guild), view=AutoModDashboardView())
             return
@@ -1487,7 +1486,7 @@ class AutoModChannelSelect(discord.ui.ChannelSelect):
         self.config_key = config_key
         self.label = label
 
-    async def callback(self, interaction: discord.Interaction):
+    async def callback(self, interaction: discord.Interaction) -> None:
         selected = self.values[0]
         channel = interaction.guild.get_channel(selected.id) or await interaction.guild.fetch_channel(selected.id)
         bot.data_manager.config[self.config_key] = channel.id
@@ -1519,7 +1518,7 @@ class AutoModChannelActionSelect(discord.ui.Select):
             row=2,
         )
 
-    async def callback(self, interaction: discord.Interaction):
+    async def callback(self, interaction: discord.Interaction) -> None:
         action = self.values[0]
         if action == "back":
             await interaction.response.edit_message(embed=build_automod_dashboard_embed(interaction.guild), view=AutoModDashboardView())
@@ -1546,7 +1545,7 @@ class AutoModStoredValueRemoveSelect(discord.ui.Select):
             options=options[:25],
         )
 
-    async def callback(self, interaction: discord.Interaction):
+    async def callback(self, interaction: discord.Interaction) -> None:
         selected_ids = {int(value) for value in self.values}
         if self.config_scope == "native":
             settings = get_native_automod_settings(bot.data_manager.config)
@@ -1570,7 +1569,7 @@ class AutoModImmunityUserSelect(discord.ui.UserSelect):
     def __init__(self):
         super().__init__(placeholder="Add immune users...", min_values=1, max_values=10, row=0)
 
-    async def callback(self, interaction: discord.Interaction):
+    async def callback(self, interaction: discord.Interaction) -> None:
         settings = get_native_automod_settings(bot.data_manager.config)
         current = {int(value) for value in settings.get("immunity_users", [])}
         current.update(int(user.id) for user in self.values)
@@ -1584,7 +1583,7 @@ class AutoModImmunityRoleSelect(discord.ui.RoleSelect):
     def __init__(self):
         super().__init__(placeholder="Add immune roles...", min_values=1, max_values=10, row=1)
 
-    async def callback(self, interaction: discord.Interaction):
+    async def callback(self, interaction: discord.Interaction) -> None:
         settings = get_native_automod_settings(bot.data_manager.config)
         current = {int(value) for value in settings.get("immunity_roles", [])}
         current.update(int(role.id) for role in self.values)
@@ -1598,7 +1597,7 @@ class AutoModImmunityChannelSelect(discord.ui.ChannelSelect):
     def __init__(self):
         super().__init__(placeholder="Add immune channels...", min_values=1, max_values=10, channel_types=[discord.ChannelType.text], row=2)
 
-    async def callback(self, interaction: discord.Interaction):
+    async def callback(self, interaction: discord.Interaction) -> None:
         settings = get_native_automod_settings(bot.data_manager.config)
         current = {int(value) for value in settings.get("immunity_channels", [])}
         current.update(int(channel.id) for channel in self.values)
@@ -1615,7 +1614,7 @@ class AutoModImmunityView(discord.ui.View):
         self.add_item(AutoModImmunityRoleSelect())
         self.add_item(AutoModImmunityChannelSelect())
 
-    async def _send_remove_picker(self, interaction: discord.Interaction, *, label: str, config_key: str):
+    async def _send_remove_picker(self, interaction: discord.Interaction, *, label: str, config_key: str) -> None:
         settings = get_native_automod_settings(bot.data_manager.config)
         values = settings.get(config_key, [])
         if not values:
@@ -1640,19 +1639,19 @@ class AutoModImmunityView(discord.ui.View):
         )
 
     @discord.ui.button(label="Remove Users", style=discord.ButtonStyle.secondary, row=3)
-    async def remove_users(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def remove_users(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         await self._send_remove_picker(interaction, label="Users", config_key="immunity_users")
 
     @discord.ui.button(label="Remove Roles", style=discord.ButtonStyle.secondary, row=3)
-    async def remove_roles(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def remove_roles(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         await self._send_remove_picker(interaction, label="Roles", config_key="immunity_roles")
 
     @discord.ui.button(label="Remove Channels", style=discord.ButtonStyle.secondary, row=3)
-    async def remove_channels(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def remove_channels(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         await self._send_remove_picker(interaction, label="Channels", config_key="immunity_channels")
 
     @discord.ui.button(label="Back", style=discord.ButtonStyle.secondary, row=3)
-    async def back(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def back(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         await interaction.response.edit_message(embed=build_automod_dashboard_embed(interaction.guild), view=AutoModDashboardView())
 
 
@@ -1670,7 +1669,7 @@ class SmartAutoModThresholdModal(discord.ui.Modal, title="Edit Smart Filter Thre
         self.caps_min_length.default = str(settings.get("caps_min_length", 12))
         self.max_caps_ratio.default = str(int(round(float(settings.get("max_caps_ratio", 0.75)) * 100)))
 
-    async def on_submit(self, interaction: discord.Interaction):
+    async def on_submit(self, interaction: discord.Interaction) -> None:
         try:
             ratio_value = float(self.max_caps_ratio.value)
             if ratio_value > 1:
@@ -1703,7 +1702,7 @@ class SmartAutoModPatternModal(discord.ui.Modal, title="Edit Blocked Patterns"):
         super().__init__()
         self.blocked_patterns.default = "\n".join(get_smart_automod_settings().get("blocked_patterns", []))
 
-    async def on_submit(self, interaction: discord.Interaction):
+    async def on_submit(self, interaction: discord.Interaction) -> None:
         lines = [line.strip() for line in self.blocked_patterns.value.splitlines() if line.strip()]
         settings = get_smart_automod_settings()
         settings["blocked_patterns"] = lines[:50]
@@ -1717,7 +1716,7 @@ class SmartAutoModExemptRoleSelect(discord.ui.RoleSelect):
     def __init__(self):
         super().__init__(placeholder="Add smart-filter exempt roles...", min_values=1, max_values=10, row=0)
 
-    async def callback(self, interaction: discord.Interaction):
+    async def callback(self, interaction: discord.Interaction) -> None:
         settings = get_smart_automod_settings()
         current = {int(value) for value in settings.get("exempt_roles", [])}
         current.update(int(role.id) for role in self.values)
@@ -1731,7 +1730,7 @@ class SmartAutoModExemptChannelSelect(discord.ui.ChannelSelect):
     def __init__(self):
         super().__init__(placeholder="Add smart-filter exempt channels...", min_values=1, max_values=10, channel_types=[discord.ChannelType.text], row=1)
 
-    async def callback(self, interaction: discord.Interaction):
+    async def callback(self, interaction: discord.Interaction) -> None:
         settings = get_smart_automod_settings()
         current = {int(value) for value in settings.get("exempt_channels", [])}
         current.update(int(channel.id) for channel in self.values)
@@ -1750,7 +1749,7 @@ class SmartAutoModSettingsView(discord.ui.View):
         self.toggle_feature.label = f"Smart Filters: {'On' if enabled else 'Off'}"
         self.toggle_feature.style = discord.ButtonStyle.success if enabled else discord.ButtonStyle.secondary
 
-    async def _send_remove_picker(self, interaction: discord.Interaction, *, label: str, config_key: str):
+    async def _send_remove_picker(self, interaction: discord.Interaction, *, label: str, config_key: str) -> None:
         settings = get_smart_automod_settings()
         values = settings.get(config_key, [])
         if not values:
@@ -1772,7 +1771,7 @@ class SmartAutoModSettingsView(discord.ui.View):
         )
 
     @discord.ui.button(label="Smart Filters", style=discord.ButtonStyle.secondary, row=2)
-    async def toggle_feature(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def toggle_feature(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         flags = bot.data_manager.config.setdefault("feature_flags", {})
         flags["smart_automod"] = not bool(flags.get("smart_automod", False))
         await bot.data_manager.save_config()
@@ -1780,23 +1779,23 @@ class SmartAutoModSettingsView(discord.ui.View):
         await interaction.response.edit_message(embed=build_smart_automod_embed(interaction.guild), view=view)
 
     @discord.ui.button(label="Edit Thresholds", style=discord.ButtonStyle.primary, row=2)
-    async def edit_thresholds(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def edit_thresholds(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         await interaction.response.send_modal(SmartAutoModThresholdModal())
 
     @discord.ui.button(label="Edit Pattern List", style=discord.ButtonStyle.primary, row=2)
-    async def edit_patterns(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def edit_patterns(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         await interaction.response.send_modal(SmartAutoModPatternModal())
 
     @discord.ui.button(label="Remove Exempt Roles", style=discord.ButtonStyle.secondary, row=3)
-    async def remove_roles(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def remove_roles(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         await self._send_remove_picker(interaction, label="Roles", config_key="exempt_roles")
 
     @discord.ui.button(label="Remove Exempt Channels", style=discord.ButtonStyle.secondary, row=3)
-    async def remove_channels(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def remove_channels(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         await self._send_remove_picker(interaction, label="Channels", config_key="exempt_channels")
 
     @discord.ui.button(label="Back", style=discord.ButtonStyle.secondary, row=3)
-    async def back(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def back(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         await interaction.response.edit_message(embed=build_automod_dashboard_embed(interaction.guild), view=AutoModDashboardView())
 
 
@@ -1806,32 +1805,32 @@ class AutoModDashboardView(discord.ui.View):
 
     # ── Row 0 · Discord AutoMod rule follow-ups ──────────────────────────
     @discord.ui.button(label="Rule Punishments", style=discord.ButtonStyle.primary, row=0)
-    async def native_rules(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def native_rules(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         await interaction.response.defer()
         rules = await fetch_native_automod_rules(interaction.guild)
         view = AutoModRuleBrowserView(rules)
         await interaction.edit_original_response(embed=build_automod_rule_browser_embed(interaction.guild, rules), view=view)
 
     @discord.ui.button(label="Response Settings", style=discord.ButtonStyle.primary, row=0)
-    async def bridge(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def bridge(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         await interaction.response.edit_message(embed=build_automod_bridge_embed(interaction.guild), view=AutoModBridgeSettingsView())
 
     # ── Row 1 · Filtering & routing ──────────────────────────────────────
     @discord.ui.button(label="Smart Filters", style=discord.ButtonStyle.secondary, row=1)
-    async def smart(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def smart(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         await interaction.response.edit_message(embed=build_smart_automod_embed(interaction.guild), view=SmartAutoModSettingsView())
 
     @discord.ui.button(label="Immunity", style=discord.ButtonStyle.secondary, row=1)
-    async def immunity(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def immunity(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         await interaction.response.edit_message(embed=build_automod_immunity_embed(interaction.guild), view=AutoModImmunityView())
 
     @discord.ui.button(label="Log Channels", style=discord.ButtonStyle.secondary, row=1)
-    async def routing(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def routing(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         await interaction.response.edit_message(embed=build_automod_routing_embed(interaction.guild), view=AutoModChannelSettingsView())
 
     # ── Row 2 · Utility ──────────────────────────────────────────────────
     @discord.ui.button(label="Refresh", style=discord.ButtonStyle.secondary, row=2)
-    async def refresh(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def refresh(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         await interaction.response.edit_message(embed=build_automod_dashboard_embed(interaction.guild), view=AutoModDashboardView())
 
 
@@ -1943,7 +1942,7 @@ class AutoModCustomReportResponseModal(discord.ui.Modal, title="Custom AutoMod R
         self.rule_name = rule_name
         self.source_message = source_message
 
-    async def on_submit(self, interaction: discord.Interaction):
+    async def on_submit(self, interaction: discord.Interaction) -> None:
         success = await apply_automod_report_response(
             interaction,
             guild_id=self.guild_id,
@@ -1978,7 +1977,7 @@ class AutoModReportResponseSelect(discord.ui.Select):
             options=options,
         )
 
-    async def callback(self, interaction: discord.Interaction):
+    async def callback(self, interaction: discord.Interaction) -> None:
         selected = self.values[0]
         if selected == "custom":
             await interaction.response.send_modal(
@@ -2050,7 +2049,7 @@ class AutoModReportModal(discord.ui.Modal, title="Report AutoMod Warning"):
         self.content = content
         self.matched_keyword = matched_keyword
 
-    async def on_submit(self, interaction: discord.Interaction):
+    async def on_submit(self, interaction: discord.Interaction) -> None:
         guild = bot.get_guild(self.guild_id) or get_primary_guild()
         if guild is None:
             await interaction.response.send_message(embed=make_embed("Server Not Found", "> The server for this report could not be resolved.", kind="error", scope=SCOPE_MODERATION, guild=interaction.guild), ephemeral=True)
@@ -2117,7 +2116,7 @@ class AutoModWarningView(discord.ui.View):
         self.matched_keyword = matched_keyword
 
     @discord.ui.button(label="Report to Moderator", style=discord.ButtonStyle.secondary)
-    async def report(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def report(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         await interaction.response.send_modal(
             AutoModReportModal(
                 guild_id=self.guild_id,

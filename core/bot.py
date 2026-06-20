@@ -1,5 +1,8 @@
+"""MGXBot class, background tasks, extension loading, and bot lifecycle."""
 from __future__ import annotations
 
+import logging
+import os
 import time
 from datetime import timedelta
 from typing import Dict, Optional, Tuple
@@ -7,6 +10,8 @@ from typing import Dict, Optional, Tuple
 import aiohttp
 import discord
 from discord.ext import commands, tasks
+
+logger = logging.getLogger("MGXBot")
 
 from core.constants import DEFAULT_GUILD_ID, SCOPE_ROLES, SCOPE_SUPPORT
 from core.context import set_bot
@@ -17,6 +22,8 @@ from core.utils import iso_to_dt, now_iso
 
 EXTENSIONS = (
     "cogs.cases",
+    "cogs.history",
+    "cogs.case_panel",
     "cogs.moderation",
     "cogs.roles",
     "cogs.derole",
@@ -24,7 +31,8 @@ EXTENSIONS = (
     "cogs.automod",
     "cogs.config",
     "cogs.analytics",
-    "cogs.system",
+    "cogs.admin",
+    "cogs.events",
 )
 
 DISABLED_APPLICATION_COMMANDS = frozenset({
@@ -70,7 +78,7 @@ class MGXBot(commands.Bot):
         self.native_automod_event_cache: Dict[Tuple[int, int, int, str, str], float] = {}
         self.abuse_system = None
 
-    async def setup_hook(self):
+    async def setup_hook(self) -> None:
         from core.data import AntiAbuseSystem
 
         self.session = aiohttp.ClientSession()
@@ -80,6 +88,10 @@ class MGXBot(commands.Bot):
 
         for extension in EXTENSIONS:
             await self.load_extension(extension)
+
+        if os.environ.get("TEST_MODE"):
+            await self.load_extension("cogs.testkit")
+            logger.info("TEST_MODE active — testkit cog loaded")
 
         self._remove_disabled_application_commands()
         await self._restore_persistent_views()
@@ -112,7 +124,7 @@ class MGXBot(commands.Bot):
             ):
                 self.tree.remove_command(command_name, type=command_type)
 
-    async def close(self):
+    async def close(self) -> None:
         for task_loop in (
             self.check_tempbans,
             self.background_save_task,
@@ -129,7 +141,7 @@ class MGXBot(commands.Bot):
         await super().close()
 
     @tasks.loop(minutes=1)
-    async def check_tempbans(self):
+    async def check_tempbans(self) -> None:
         now = discord.utils.utcnow()
         changed = False
         if not self.data_manager:
@@ -155,19 +167,19 @@ class MGXBot(commands.Bot):
             await self.data_manager.save_punishments()
 
     @tasks.loop(minutes=2)
-    async def background_save_task(self):
+    async def background_save_task(self) -> None:
         if self.data_manager:
             await self.data_manager.save_all()
 
     @tasks.loop(minutes=30)
-    async def status_task(self):
+    async def status_task(self) -> None:
         # "Listening to DMs for support" — reads cleanly and reflects modmail
         await self.change_presence(
             activity=discord.Activity(type=discord.ActivityType.listening, name="DMs for support")
         )
 
     @tasks.loop(minutes=10)
-    async def modmail_sla_task(self):
+    async def modmail_sla_task(self) -> None:
         from cogs.shared import make_embed
 
         if not self.data_manager or not get_feature_flag(self.data_manager.config, "advanced_modmail", True):
@@ -218,7 +230,7 @@ class MGXBot(commands.Bot):
             await self.data_manager.save_modmail()
 
     @tasks.loop(hours=6)
-    async def role_cleanup_task(self):
+    async def role_cleanup_task(self) -> None:
         from cogs.shared import send_log
         from cogs.shared import get_custom_role_limit
         from cogs.shared import format_reason_value, make_embed
@@ -280,15 +292,15 @@ class MGXBot(commands.Bot):
             await self.data_manager.save_roles()
 
     @status_task.before_loop
-    async def before_status_task(self):
+    async def before_status_task(self) -> None:
         await self.wait_until_ready()
 
     @modmail_sla_task.before_loop
-    async def before_modmail_sla_task(self):
+    async def before_modmail_sla_task(self) -> None:
         await self.wait_until_ready()
 
     @role_cleanup_task.before_loop
-    async def before_role_cleanup_task(self):
+    async def before_role_cleanup_task(self) -> None:
         await self.wait_until_ready()
 
 

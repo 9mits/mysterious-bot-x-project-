@@ -1,3 +1,4 @@
+"""Module-level proxy singletons for bot, tree, and abuse_system."""
 from __future__ import annotations
 
 from typing import Optional

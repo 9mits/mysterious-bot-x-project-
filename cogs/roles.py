@@ -1,5 +1,4 @@
-# modules/commands/roles.py
-# Custom role views, modals, embed builders, and role slash commands.
+"""Custom booster role CRUD: views, modals, embed builders, and /role commands."""
 
 import discord
 from discord import app_commands
@@ -143,7 +142,7 @@ class CreateRoleModal(discord.ui.Modal, title="Create your custom role"):
         super().__init__()
         self._member = member
 
-    async def on_submit(self, interaction: discord.Interaction):
+    async def on_submit(self, interaction: discord.Interaction) -> None:
         member = self._member
         guild = interaction.guild
 
@@ -250,7 +249,7 @@ class EditNameModal(discord.ui.Modal, title="Edit role name"):
         super().__init__()
         self.member = member
         self.role = role
-    async def on_submit(self, interaction):
+    async def on_submit(self, interaction) -> None:
         name = self.new_name.value.strip()[:100]
         try:
             await self.role.edit(name=name, reason=f"Renamed by {interaction.user}")
@@ -277,7 +276,7 @@ class EditColorModal(discord.ui.Modal, title="Edit role color"):
         super().__init__()
         self.member = member
         self.role = role
-    async def on_submit(self, interaction):
+    async def on_submit(self, interaction) -> None:
         c = self.new_color.value.strip()
         if not hex_valid(c):
             await interaction.response.send_message(embed=make_embed("Invalid Color", "> Invalid hex color.", kind="error", scope=SCOPE_ROLES, guild=interaction.guild), ephemeral=True)
@@ -309,14 +308,14 @@ class ConfirmRevokeView(discord.ui.View):
         self.target_message = target_message
 
     @discord.ui.button(label="Yes, Revoke", style=discord.ButtonStyle.danger)
-    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         if not is_staff(interaction):
             await interaction.response.send_message(embed=make_embed("Access Denied", "> You do not have permission to use this.", kind="error", scope=SCOPE_ROLES, guild=interaction.guild), ephemeral=True)
             return
         await self.parent_view.finish_revoke(interaction, self.target_message)
 
     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
-    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         await interaction.response.edit_message(embed=make_embed("Revocation Cancelled", "> No changes were made to this punishment.", kind="muted", scope=SCOPE_MODERATION, guild=interaction.guild), view=None)
 
 class DenyAppealModal(discord.ui.Modal, title="Deny Appeal"):
@@ -328,7 +327,7 @@ class DenyAppealModal(discord.ui.Modal, title="Deny Appeal"):
         self.origin_message = origin_message
         self.view = view
 
-    async def on_submit(self, interaction: discord.Interaction):
+    async def on_submit(self, interaction: discord.Interaction) -> None:
         if not is_staff(interaction):
             await interaction.response.send_message(embed=make_embed("Access Denied", "> You do not have permission to use this.", kind="error", scope=SCOPE_MODERATION, guild=interaction.guild), ephemeral=True)
             return
@@ -373,20 +372,20 @@ class RevokeAppealView(discord.ui.View):
         self.timestamp = timestamp
 
     @discord.ui.button(label="Revoke Punishment", style=discord.ButtonStyle.danger, custom_id="revoke_punishment_btn")
-    async def start_revoke(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def start_revoke(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         if not is_staff(interaction):
             await interaction.response.send_message(embed=make_embed("Access Denied", "> You do not have permission to use this.", kind="error", scope=SCOPE_MODERATION, guild=interaction.guild), ephemeral=True)
             return
         await interaction.response.send_message(embed=make_embed("Confirm Revocation", "> Are you sure you want to revoke this punishment?", kind="warning", scope=SCOPE_MODERATION, guild=interaction.guild), view=ConfirmRevokeView(self, interaction.message), ephemeral=True)
 
     @discord.ui.button(label="Deny Appeal", style=discord.ButtonStyle.secondary, custom_id="deny_appeal_btn")
-    async def deny_appeal(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def deny_appeal(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         if not is_staff(interaction):
             await interaction.response.send_message(embed=make_embed("Access Denied", "> You do not have permission to use this.", kind="error", scope=SCOPE_MODERATION, guild=interaction.guild), ephemeral=True)
             return
         await interaction.response.send_modal(DenyAppealModal(self.target_id, interaction.message, self))
 
-    async def finish_revoke(self, interaction: discord.Interaction, message: discord.Message):
+    async def finish_revoke(self, interaction: discord.Interaction, message: discord.Message) -> None:
         if not is_staff(interaction):
             await interaction.response.send_message(embed=make_embed("Access Denied", "> You do not have permission to use this.", kind="error", scope=SCOPE_MODERATION, guild=interaction.guild), ephemeral=True)
             return
@@ -511,7 +510,7 @@ class AppealModal(discord.ui.Modal, title="Appeal Punishment"):
         self.timestamp = timestamp
         self.original_reason = original_reason
 
-    async def on_submit(self, interaction: discord.Interaction):
+    async def on_submit(self, interaction: discord.Interaction) -> None:
         guild = bot.get_guild(self.guild_id)
         if not guild:
             await interaction.response.send_message(embed=make_embed("Server Not Found", "> The server could not be found.", kind="error", scope=SCOPE_MODERATION, guild=interaction.guild), ephemeral=True)
@@ -573,7 +572,7 @@ class AppealView(discord.ui.View):
         self.reason = reason
 
     @discord.ui.button(label="Appeal Punishment", style=discord.ButtonStyle.secondary)
-    async def appeal(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def appeal(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         await interaction.response.send_modal(AppealModal(self.guild_id, self.target_id, self.moderator_id, self.duration, self.timestamp, self.reason))
 
 class GradientModal(discord.ui.Modal, title="Set Gradient Style"):
@@ -584,7 +583,7 @@ class GradientModal(discord.ui.Modal, title="Set Gradient Style"):
         self.member = member
         self.role = role
 
-    async def on_submit(self, interaction: discord.Interaction):
+    async def on_submit(self, interaction: discord.Interaction) -> None:
         sec_val = self.secondary.value.strip()
         if not hex_valid(sec_val):
             await interaction.response.send_message(embed=make_embed("Invalid Color", "> Invalid hex color.", kind="error", scope=SCOPE_ROLES, guild=interaction.guild), ephemeral=True)
@@ -631,7 +630,7 @@ class RoleStyleView(discord.ui.View):
         self.role = role
 
     @discord.ui.button(label="Static (Reset)", style=discord.ButtonStyle.secondary)
-    async def static_style(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def static_style(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         try:
             edited_role = await self.role.edit(
                 color=self.role.color.value,
@@ -654,11 +653,11 @@ class RoleStyleView(discord.ui.View):
             await interaction.response.send_message(embed=make_embed("Failed", f"> Failed: {e}", kind="error", scope=SCOPE_ROLES, guild=interaction.guild), ephemeral=True)
 
     @discord.ui.button(label="Gradient", style=discord.ButtonStyle.primary)
-    async def gradient_style(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def gradient_style(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         await interaction.response.send_modal(GradientModal(self.member, self.role))
 
     @discord.ui.button(label="Holographic", style=discord.ButtonStyle.success)
-    async def holographic_style(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def holographic_style(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         try:
             edited_role = await self.role.edit(
                 color=HOLO_PRIMARY,
@@ -698,7 +697,7 @@ class IconURLModal(discord.ui.Modal, title="Set Icon via URL"):
         self.member = member
         self.role = role
 
-    async def on_submit(self, interaction: discord.Interaction):
+    async def on_submit(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
         val = self.url.value.strip()
         
@@ -724,14 +723,14 @@ class UploadIconView(discord.ui.View):
         self.role = role
 
     @discord.ui.button(label="Upload File", style=discord.ButtonStyle.primary)
-    async def upload_file(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def upload_file(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         for child in self.children:
             child.disabled = True
         await interaction.response.edit_message(view=self)
         
         await interaction.followup.send(interaction.user.mention, embed=make_embed("Upload Image", "> Please reply to this message with your image file now.", kind="info", scope=SCOPE_ROLES, guild=interaction.guild), ephemeral=True)
         
-        def check(m):
+        def check(m) -> None:
             return m.author.id == interaction.user.id and m.channel.id == interaction.channel.id and m.attachments
 
         try:
@@ -759,7 +758,7 @@ class UploadIconView(discord.ui.View):
             await interaction.followup.send(embed=make_embed("Failed", f"> Failed: {e}", kind="error", scope=SCOPE_ROLES, guild=interaction.guild), ephemeral=True)
 
     @discord.ui.button(label="Enter URL", style=discord.ButtonStyle.secondary)
-    async def enter_url(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def enter_url(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         await interaction.response.send_modal(IconURLModal(self.member, self.role))
 
 class RoleActionSelect(discord.ui.Select):
@@ -775,7 +774,7 @@ class RoleActionSelect(discord.ui.Select):
         ]
         super().__init__(placeholder="Choose a role action...", min_values=1, max_values=1, options=options)
 
-    async def callback(self, interaction: discord.Interaction):
+    async def callback(self, interaction: discord.Interaction) -> None:
         action = self.values[0]
         if action == "name":
             await interaction.response.send_modal(EditNameModal(self.member, self.role))
@@ -811,7 +810,7 @@ class EditView(discord.ui.View):
         self.add_item(RoleActionSelect(member, role))
 
     @discord.ui.button(label="Refresh Panel", style=discord.ButtonStyle.secondary, row=1)
-    async def refresh_panel(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def refresh_panel(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         rec = find_role_rec(self.member.id, self.role.id)
         role_obj = interaction.guild.get_role(self.role.id) if rec else None
         if not rec or not role_obj:
@@ -836,7 +835,7 @@ class ConfirmDelete(discord.ui.View):
         self.role = role
         self.message: Optional[discord.Message] = None
 
-    async def on_timeout(self):
+    async def on_timeout(self) -> None:
         if self.message:
             try:
                 await self.message.edit(
@@ -847,7 +846,7 @@ class ConfirmDelete(discord.ui.View):
                 pass
 
     @discord.ui.button(label="Confirm", style=discord.ButtonStyle.danger)
-    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         try:
             await self.role.delete(reason=f"Deleted by {interaction.user} (via Menu)")
         except Exception:
@@ -864,7 +863,7 @@ class ConfirmDelete(discord.ui.View):
         self.stop()
 
     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
-    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         await interaction.response.edit_message(embed=make_embed("Deletion Cancelled", "> Your custom role was not deleted.", kind="muted", scope=SCOPE_ROLES, guild=interaction.guild), view=None)
         self.stop()
 
@@ -934,7 +933,7 @@ class RoleSettingsLimitModal(discord.ui.Modal, title="Set Role Limit"):
         self.action = action
         self.target = target
 
-    async def on_submit(self, interaction: discord.Interaction):
+    async def on_submit(self, interaction: discord.Interaction) -> None:
         try:
             limit = max(1, int(self.limit_value.value or 1))
         except ValueError:
@@ -953,7 +952,7 @@ class RoleSettingsMemberTargetSelect(discord.ui.UserSelect):
         )
         self._target_view = parent
 
-    async def callback(self, interaction: discord.Interaction):
+    async def callback(self, interaction: discord.Interaction) -> None:
         selected = self.values[0]
         if isinstance(selected, discord.Member):
             member = selected
@@ -977,7 +976,7 @@ class RoleSettingsRoleTargetSelect(discord.ui.RoleSelect):
         )
         self._target_view = parent
 
-    async def callback(self, interaction: discord.Interaction):
+    async def callback(self, interaction: discord.Interaction) -> None:
         await self._target_view.handle_target(interaction, self.values[0])
 
 
@@ -998,7 +997,7 @@ class RoleSettingsTargetSelectView(discord.ui.View):
         await interaction.response.send_message(embed=make_embed("Access Denied", "> This selector belongs to another administrator.", kind="error", scope=SCOPE_ROLES, guild=interaction.guild), ephemeral=True)
         return False
 
-    async def handle_target(self, interaction: discord.Interaction, target: Union[discord.Member, discord.Role]):
+    async def handle_target(self, interaction: discord.Interaction, target: Union[discord.Member, discord.Role]) -> None:
         if self.require_limit:
             await interaction.response.send_modal(RoleSettingsLimitModal(action=self.action, target=target))
             return
@@ -1045,7 +1044,7 @@ class RoleSettingsAccessSelect(discord.ui.Select):
         ]
         super().__init__(placeholder="Choose an access rule action...", min_values=1, max_values=1, options=options)
 
-    async def callback(self, interaction: discord.Interaction):
+    async def callback(self, interaction: discord.Interaction) -> None:
         value = self.values[0]
         if value == "whitelist_member":
             await send_role_target_picker(interaction, title="Allow Member", action="whitelist", target_type="member", require_limit=True)
@@ -1092,7 +1091,7 @@ class TrackedRolesSelect(discord.ui.Select):
             options = [discord.SelectOption(label="No roles tracked", value="__empty__", description="There are no custom roles yet.")]
         super().__init__(placeholder="Select a role to inspect...", min_values=1, max_values=1, options=options[:25])
 
-    async def callback(self, interaction: discord.Interaction):
+    async def callback(self, interaction: discord.Interaction) -> None:
         if self.values[0] == "__empty__":
             await interaction.response.defer()
             return
@@ -1134,7 +1133,7 @@ class RoleSettingsActionSelect(discord.ui.Select):
         ]
         super().__init__(placeholder="Choose a role settings action...", min_values=1, max_values=1, options=options)
 
-    async def callback(self, interaction: discord.Interaction):
+    async def callback(self, interaction: discord.Interaction) -> None:
         action = self.values[0]
         if action == "refresh":
             await interaction.response.edit_message(embed=build_role_settings_embed(interaction.guild), view=RoleSettingsView())
@@ -1201,7 +1200,7 @@ class RolePickerSelect(discord.ui.Select):
         super().__init__(placeholder="Choose a role to manage...", min_values=1, max_values=1, options=options)
         self._valid_roles = valid_roles
 
-    async def callback(self, interaction: discord.Interaction):
+    async def callback(self, interaction: discord.Interaction) -> None:
         value = self.values[0]
         if value == "__create__":
             await interaction.response.send_modal(CreateRoleModal(self.member))
@@ -1275,7 +1274,7 @@ async def role_cmd(interaction: discord.Interaction):
         embed = build_role_landing_embed(interaction.user, limit=max(1, limit))
         view = discord.ui.View()
         btn = discord.ui.Button(label="Create Role", style=discord.ButtonStyle.success)
-        async def create_callback(inter: discord.Interaction):
+        async def create_callback(inter: discord.Interaction) -> None:
             await inter.response.send_modal(CreateRoleModal(inter.user))
         btn.callback = create_callback
         view.add_item(btn)

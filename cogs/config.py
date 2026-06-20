@@ -1,5 +1,4 @@
-# modules/commands/config.py
-# Server configuration views and /setup, /config commands.
+"""Server configuration views and /setup, /config commands."""
 
 import discord
 from discord import app_commands
@@ -38,7 +37,7 @@ class ConfigRoleSelect(discord.ui.RoleSelect):
         self.config_key = config_key
         self.config_name = config_name
 
-    async def callback(self, interaction: discord.Interaction):
+    async def callback(self, interaction: discord.Interaction) -> None:
         role = self.values[0]
         bot.data_manager.config[self.config_key] = role.id
         await bot.data_manager.save_config()
@@ -50,7 +49,7 @@ class ConfigChannelSelect(discord.ui.ChannelSelect):
         self.config_key = config_key
         self.config_name = config_name
 
-    async def callback(self, interaction: discord.Interaction):
+    async def callback(self, interaction: discord.Interaction) -> None:
         selected = self.values[0]
         channel = interaction.guild.get_channel(selected.id) or await interaction.guild.fetch_channel(selected.id)
         bot.data_manager.config[self.config_key] = channel.id
@@ -96,7 +95,7 @@ class ConfigTypeSelect(discord.ui.Select):
             row=row,
         )
 
-    async def callback(self, interaction: discord.Interaction):
+    async def callback(self, interaction: discord.Interaction) -> None:
         key = self.values[0]
         name = next(o.label for o in self.options if o.value == key)
         
@@ -123,7 +122,7 @@ class EscalationMatrixModal(discord.ui.Modal, title="Edit Punishment Scaling"):
         super().__init__()
         self.matrix_json.default = json.dumps(bot.data_manager.config.get("escalation_matrix", DEFAULT_ESCALATION_MATRIX), indent=2)
 
-    async def on_submit(self, interaction: discord.Interaction):
+    async def on_submit(self, interaction: discord.Interaction) -> None:
         try:
             payload = json.loads(self.matrix_json.value)
             if not isinstance(payload, list):
@@ -150,11 +149,11 @@ class EscalationMatrixView(discord.ui.View):
         super().__init__(timeout=180)
 
     @discord.ui.button(label="Edit JSON", style=discord.ButtonStyle.primary)
-    async def edit_matrix(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def edit_matrix(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         await interaction.response.send_modal(EscalationMatrixModal())
 
     @discord.ui.button(label="Reset Defaults", style=discord.ButtonStyle.secondary)
-    async def reset_matrix(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def reset_matrix(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         bot.data_manager.config["escalation_matrix"] = json.loads(json.dumps(DEFAULT_ESCALATION_MATRIX))
         await bot.data_manager.save_config()
         await interaction.response.edit_message(embed=build_escalation_matrix_embed(interaction.guild), view=self)
@@ -169,7 +168,7 @@ class ConfigImportModal(discord.ui.Modal, title="Paste Settings Backup"):
         max_length=4000,
     )
 
-    async def on_submit(self, interaction: discord.Interaction):
+    async def on_submit(self, interaction: discord.Interaction) -> None:
         try:
             payload = json.loads(self.config_json.value)
             if not isinstance(payload, dict):
@@ -205,7 +204,7 @@ class ConfigDashboardActionSelect(discord.ui.Select):
             options=options,
         )
 
-    async def callback(self, interaction: discord.Interaction):
+    async def callback(self, interaction: discord.Interaction) -> None:
         action = self.values[0]
         if action == "export":
             payload = export_config_payload(bot.data_manager.config)
@@ -243,7 +242,7 @@ class GuildIdModal(discord.ui.Modal, title="Set Guild ID"):
         super().__init__()
         self.guild_id.default = str(current_guild_id)
 
-    async def on_submit(self, interaction: discord.Interaction):
+    async def on_submit(self, interaction: discord.Interaction) -> None:
         if not self.guild_id.value.isdigit():
             await interaction.response.send_message(embed=make_embed("Invalid ID", "> Invalid guild ID.", kind="error", scope=SCOPE_SYSTEM, guild=interaction.guild), ephemeral=True)
             return
@@ -388,7 +387,7 @@ class SetupDashboardActionSelect(discord.ui.Select):
             row=2,
         )
 
-    async def callback(self, interaction: discord.Interaction):
+    async def callback(self, interaction: discord.Interaction) -> None:
         action = self.values[0]
         if action == "guild_id":
             await interaction.response.send_modal(GuildIdModal(interaction.guild.id))
@@ -431,7 +430,7 @@ class SetupLandingView(discord.ui.View):
         super().__init__(timeout=180)
 
     @discord.ui.button(label="Roles", style=discord.ButtonStyle.primary, row=0)
-    async def roles_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def roles_btn(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         config = bot.data_manager.config
         from core.constants import DEFAULT_ROLE_OWNER, DEFAULT_ROLE_ADMIN, DEFAULT_ROLE_MOD, DEFAULT_ROLE_COMMUNITY_MANAGER, DEFAULT_ANCHOR_ROLE_ID
         embed = discord.Embed(title="Configure Roles", color=discord.Color.blurple())
@@ -446,7 +445,7 @@ class SetupLandingView(discord.ui.View):
         await interaction.response.send_message(embed=embed, view=SetupRolesView(), ephemeral=True)
 
     @discord.ui.button(label="Channels", style=discord.ButtonStyle.primary, row=0)
-    async def channels_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def channels_btn(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         config = bot.data_manager.config
         def _ch(key): return f"<#{config[key]}>" if config.get(key) else "Not set"
         embed = discord.Embed(title="Configure Channels", color=discord.Color.blurple())
@@ -465,7 +464,7 @@ class SetupLandingView(discord.ui.View):
         await interaction.response.send_message(embed=embed, view=SetupChannelsView(), ephemeral=True)
 
     @discord.ui.button(label="Other", style=discord.ButtonStyle.secondary, row=0)
-    async def other_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def other_btn(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         embed = make_embed("Other Settings", "> Set the Guild ID, send the modmail panel, or run a full configuration validation check.", kind="info", scope=SCOPE_SYSTEM, guild=interaction.guild)
         await interaction.response.send_message(embed=embed, view=SetupOtherView(), ephemeral=True)
 

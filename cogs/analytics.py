@@ -1,5 +1,4 @@
-# modules/commands/analytics.py
-# Staff analytics, moderation stats, and directory command.
+"""Staff analytics, moderation stats, and /stats, /directory commands."""
 
 import discord
 from discord import app_commands
@@ -167,7 +166,7 @@ class ModCasesSelect(discord.ui.Select):
             
         super().__init__(placeholder="Select a case to view details...", min_values=1, max_values=1, options=options, disabled=not options)
 
-    async def callback(self, interaction: discord.Interaction):
+    async def callback(self, interaction: discord.Interaction) -> None:
         if self.values[0] == "-1":
             return
             
@@ -255,11 +254,11 @@ class StaffProfileView(discord.ui.View):
                     break
 
     @discord.ui.button(label="Back to Stats", style=discord.ButtonStyle.secondary, row=1)
-    async def back_stats(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def back_stats(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         await interaction.response.edit_message(embed=self.stats_embed, view=self)
 
     @discord.ui.button(label="Back to Directory", style=discord.ButtonStyle.primary, row=1)
-    async def back_dir(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def back_dir(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         view = StaffView(self.staff_members)
         await interaction.response.edit_message(embed=self.directory_embed, view=view)
 
@@ -271,7 +270,7 @@ class StaffSelect(discord.ui.Select):
             options.append(discord.SelectOption(label=m.display_name, value=str(m.id)))
         super().__init__(placeholder="Select a staff member to view stats...", min_values=1, max_values=1, options=options)
 
-    async def callback(self, interaction: discord.Interaction):
+    async def callback(self, interaction: discord.Interaction) -> None:
         target_id = int(self.values[0])
         target = interaction.guild.get_member(target_id)
         if target:

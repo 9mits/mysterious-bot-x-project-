@@ -1,8 +1,10 @@
 import subprocess
 import sys
 import os
+from pathlib import Path
 
-def load_env(path):
+
+def load_env(path: str) -> dict:
     env = os.environ.copy()
     with open(path) as f:
         for line in f:
@@ -13,14 +15,22 @@ def load_env(path):
             env[key.strip()] = val.strip()
     return env
 
-bot1 = subprocess.Popen([sys.executable, "main.py"], env=load_env(".env.bot1"))
-bot2 = subprocess.Popen([sys.executable, "main.py"], env=load_env(".env.bot2"))
+
+processes = []
+
+for env_file in (".env.bot1", ".env.bot2", ".env.test"):
+    if Path(env_file).exists():
+        processes.append(subprocess.Popen([sys.executable, "main.py"], env=load_env(env_file)))
+
+if not processes:
+    print("No .env.bot1, .env.bot2, or .env.test files found — nothing to launch.")
+    sys.exit(1)
 
 try:
-    bot1.wait()
-    bot2.wait()
+    for p in processes:
+        p.wait()
 except KeyboardInterrupt:
-    bot1.terminate()
-    bot2.terminate()
-    bot1.wait()
-    bot2.wait()
+    for p in processes:
+        p.terminate()
+    for p in processes:
+        p.wait()

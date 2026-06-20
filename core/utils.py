@@ -1,3 +1,4 @@
+"""Stateless utility helpers: duration parsing, time formatting, text helpers."""
 from __future__ import annotations
 
 from datetime import datetime, timezone
