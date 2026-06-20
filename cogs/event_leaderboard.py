@@ -52,18 +52,23 @@ RUNTIME_FILE = EVENT_DIR / "event_runtime.json"   # writer: display (bot2)
 _DEFAULT_CONFIG: Dict[str, Any] = {
     "active": False,
     "guild_id": None,
-    "channel_id": None,
+    "channel_id": None,            # text channel for the leaderboard message
+    "voice_channel_id": None,      # voice channel to track (None = any non-AFK VC)
     "goal_hours": DEFAULT_GOAL_HOURS,
     "title": DEFAULT_TITLE,
     "started_at": None,
     "reset_token": 0,
+    "baseline_seconds": 0,         # VC time already elapsed before bot tracking
+    "baseline_token": 0,           # bumped whenever baseline is (re)set
 }
 
 _DEFAULT_RUNTIME: Dict[str, Any] = {
     "message_id": None,
-    "totals": {},            # {user_id(str): seconds(int)}
+    "totals": {},                  # {user_id(str): seconds(int)}
+    "vc_active_seconds": 0,        # time the tracked VC has had someone in it
     "last_updated": None,
     "applied_reset_token": 0,
+    "applied_baseline_token": 0,
 }
 
 
@@ -213,19 +218,56 @@ async def event_goal(interaction: discord.Interaction, hours: app_commands.Range
     )
 
 
+@event_group.command(name="vc", description="Choose which voice channel to track (leave empty to track all).")
+@app_commands.describe(channel="The event voice channel. Omit to count any non-AFK voice channel.")
+async def event_vc(interaction: discord.Interaction, channel: Optional[discord.VoiceChannel] = None) -> None:
+    cfg = load_config()
+    cfg["voice_channel_id"] = channel.id if channel else None
+    save_config(cfg)
+    where = channel.mention if channel else "**any** non-AFK voice channel"
+    await interaction.response.send_message(
+        embed=_control_embed("Tracked Voice Channel Set", f"> Now tracking {where}.", kind="success", guild=interaction.guild),
+        ephemeral=True,
+    )
+
+
+@event_group.command(name="elapsed", description="Set how many hours of VC activity have ALREADY happened (head start).")
+@app_commands.describe(hours="Hours already completed before the bot started tracking (e.g. 165).")
+async def event_elapsed(interaction: discord.Interaction, hours: app_commands.Range[float, 0, 1000000]) -> None:
+    cfg = load_config()
+    cfg["baseline_seconds"] = int(hours * 3600)
+    cfg["baseline_token"] = int(cfg.get("baseline_token", 0)) + 1
+    save_config(cfg)
+    await interaction.response.send_message(
+        embed=_control_embed(
+            "Baseline Set",
+            f"> Progress now starts at **{hours:,.1f} hours** and counts up from there.\n"
+            f"> The display bot resets its live VC counter on the next refresh.",
+            kind="success",
+            guild=interaction.guild,
+        ),
+        ephemeral=True,
+    )
+
+
 @event_group.command(name="status", description="Show the current event configuration and runtime state.")
 async def event_status(interaction: discord.Interaction) -> None:
     cfg = load_config()
     rt = load_runtime()
     totals = rt.get("totals", {})
     channel_id = cfg.get("channel_id")
+    voice_channel_id = cfg.get("voice_channel_id")
     message_id = rt.get("message_id")
     guild_id = cfg.get("guild_id")
+    active_seconds = int(cfg.get("baseline_seconds", 0)) + int(rt.get("vc_active_seconds", 0))
 
     lines = [
         f"> **Active:** {'Yes' if cfg.get('active') else 'No'}",
-        f"> **Channel:** {f'<#{channel_id}>' if channel_id else 'Not set'}",
+        f"> **Leaderboard channel:** {f'<#{channel_id}>' if channel_id else 'Not set'}",
+        f"> **Tracked voice channel:** {f'<#{voice_channel_id}>' if voice_channel_id else 'Any non-AFK VC'}",
         f"> **Goal:** {int(cfg.get('goal_hours', DEFAULT_GOAL_HOURS)):,} hours",
+        f"> **VC activity so far:** {format_vc_time(active_seconds)} "
+        f"(baseline {format_vc_time(int(cfg.get('baseline_seconds', 0)))} + tracked {format_vc_time(int(rt.get('vc_active_seconds', 0)))})",
         f"> **Participants tracked:** {len(totals)}",
         f"> **Last refresh:** {rt.get('last_updated') or 'never'}",
     ]
@@ -253,10 +295,15 @@ class EventLeaderboardCog(commands.Cog):
         self._active = False
         self._guild_id: Optional[int] = None
         self._channel_id: Optional[int] = None
+        self._voice_channel_id: Optional[int] = None
         self._goal_hours = DEFAULT_GOAL_HOURS
         self._title = DEFAULT_TITLE
         self._message_id: Optional[int] = None
         self._applied_reset_token = 0
+        self._baseline_seconds = 0
+        self._applied_baseline_token = 0
+        self._vc_active_seconds = 0           # accumulated VC uptime (this run + persisted)
+        self._vc_active_since: Optional[float] = None  # epoch when VC became active
         self._loaded = False
 
     # -- helpers ----------------------------------------------------------
@@ -267,14 +314,30 @@ class EventLeaderboardCog(commands.Cog):
         self._totals = {str(k): int(v) for k, v in rt.get("totals", {}).items()}
         self._message_id = rt.get("message_id")
         self._applied_reset_token = int(rt.get("applied_reset_token", 0))
+        self._applied_baseline_token = int(rt.get("applied_baseline_token", 0))
+        self._vc_active_seconds = int(rt.get("vc_active_seconds", 0))
         self._loaded = True
 
     def _is_tracked_channel(self, channel: Optional[discord.VoiceChannel], guild: Optional[discord.Guild]) -> bool:
         if channel is None or guild is None:
             return False
+        if self._voice_channel_id:
+            return channel.id == self._voice_channel_id
         if guild.afk_channel and channel.id == guild.afk_channel.id:
             return False
         return True
+
+    def _accumulate_vc_active(self) -> None:
+        """Track how long the VC has had at least one person in it (while active)."""
+        now = time.time()
+        occupied = len(self._sessions) > 0
+        if self._vc_active_since is not None:
+            # Bank the open interval, then either continue or close it.
+            if self._active:
+                self._vc_active_seconds += int(now - self._vc_active_since)
+            self._vc_active_since = now if (occupied and self._active) else None
+        if occupied and self._active and self._vc_active_since is None:
+            self._vc_active_since = now
 
     def _flush_sessions(self) -> None:
         """Move elapsed time from open sessions into totals (only while active)."""
@@ -306,8 +369,10 @@ class EventLeaderboardCog(commands.Cog):
         save_runtime({
             "message_id": self._message_id,
             "totals": self._totals,
+            "vc_active_seconds": self._vc_active_seconds,
             "last_updated": now_iso(),
             "applied_reset_token": self._applied_reset_token,
+            "applied_baseline_token": self._applied_baseline_token,
         })
 
     def _build_embed(self, guild: discord.Guild) -> discord.Embed:
@@ -326,16 +391,20 @@ class EventLeaderboardCog(commands.Cog):
         else:
             board = "*No one is in voice chat yet. Hop in to get on the board.*"
 
-        total_seconds = sum(totals.values())
-        total_hours = total_seconds / 3600
+        # Progress = how long the VC has been active (baseline + tracked uptime),
+        # plus any currently-open interval so the bar moves between flushes.
+        active_seconds = self._baseline_seconds + self._vc_active_seconds
+        if self._vc_active_since is not None:
+            active_seconds += int(time.time() - self._vc_active_since)
+        active_hours = active_seconds / 3600
         goal = max(1, int(self._goal_hours))
-        pct = total_hours / goal
+        pct = active_hours / goal
         bar = create_progress_bar(pct, 20)
 
         description = (
             f"{board}\n\n"
             f"{bar}\n"
-            f"**{total_hours:,.1f}** / {goal:,} hours combined ({min(100, pct * 100):.1f}%)"
+            f"**{active_hours:,.1f}** / {goal:,} hours of voice activity ({min(100, pct * 100):.1f}%)"
         )
 
         return make_embed(
@@ -394,8 +463,10 @@ class EventLeaderboardCog(commands.Cog):
         self._active = bool(cfg.get("active"))
         self._guild_id = cfg.get("guild_id")
         self._channel_id = cfg.get("channel_id")
+        self._voice_channel_id = cfg.get("voice_channel_id")
         self._goal_hours = int(cfg.get("goal_hours", DEFAULT_GOAL_HOURS))
         self._title = cfg.get("title", DEFAULT_TITLE)
+        self._baseline_seconds = int(cfg.get("baseline_seconds", 0))
 
         # Honour a reset issued from the control instance.
         token = int(cfg.get("reset_token", 0))
@@ -403,6 +474,13 @@ class EventLeaderboardCog(commands.Cog):
             self._totals = {}
             self._sessions = {}
             self._applied_reset_token = token
+
+        # Honour a baseline (re)set: start VC-uptime counting fresh from the baseline.
+        baseline_token = int(cfg.get("baseline_token", 0))
+        if baseline_token != self._applied_baseline_token:
+            self._vc_active_seconds = 0
+            self._vc_active_since = None
+            self._applied_baseline_token = baseline_token
 
         if not self._guild_id or not self._channel_id:
             return
@@ -412,6 +490,7 @@ class EventLeaderboardCog(commands.Cog):
 
         self._sync_sessions(guild)
         self._flush_sessions()
+        self._accumulate_vc_active()
 
         if self._active:
             channel = guild.get_channel(self._channel_id)
