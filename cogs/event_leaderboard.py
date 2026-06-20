@@ -417,7 +417,7 @@ class EventLeaderboardCog(commands.Cog):
         ))
         container.add_item(discord.ui.Separator(visible=False))
         container.add_item(discord.ui.TextDisplay(
-            f"-# {BRAND_NAME} • Updates every {EVENT_REFRESH_SECONDS} seconds • Updated <t:{now_unix}:R>"
+            f"-# {BRAND_NAME} • Updated <t:{now_unix}:R>"
         ))
         view.add_item(container)
         return view
