@@ -33,6 +33,7 @@ EXTENSIONS = (
     "cogs.analytics",
     "cogs.admin",
     "cogs.events",
+    "cogs.event_leaderboard",
 )
 
 DISABLED_APPLICATION_COMMANDS = frozenset({
@@ -60,6 +61,7 @@ def _build_intents() -> discord.Intents:
     intents.guilds = True
     intents.members = True
     intents.message_content = True
+    intents.voice_states = True  # required for the VC event leaderboard
     if hasattr(intents, "auto_moderation_configuration"):
         intents.auto_moderation_configuration = True
     if hasattr(intents, "auto_moderation_execution"):

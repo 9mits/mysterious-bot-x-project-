@@ -28,6 +28,7 @@ class MbxBootstrapTests(unittest.TestCase):
             "cogs.analytics",
             "cogs.admin",
             "cogs.events",
+            "cogs.event_leaderboard",
         ):
             module = importlib.import_module(module_name)
             self.assertTrue(hasattr(module, "setup"))
