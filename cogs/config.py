@@ -8,7 +8,13 @@ from typing import Optional
 import io
 
 from core.constants import (
+    DEFAULT_ANCHOR_ROLE_ID,
+    DEFAULT_ROLE_ADMIN,
+    DEFAULT_ROLE_COMMUNITY_MANAGER,
+    DEFAULT_ROLE_MOD,
+    DEFAULT_ROLE_OWNER,
     SCOPE_SYSTEM,
+    THEME_ORANGE,
 )
 from core.services import (
     DEFAULT_ESCALATION_MATRIX,
@@ -22,7 +28,6 @@ from .shared import (
     make_embed,
     make_confirmation_embed,
     respond_with_error,
-    build_setup_dashboard_embed,
     build_config_dashboard_embed,
     build_escalation_matrix_embed,
     build_setup_validation_embed,
@@ -98,17 +103,21 @@ class ConfigTypeSelect(discord.ui.Select):
     async def callback(self, interaction: discord.Interaction) -> None:
         key = self.values[0]
         name = next(o.label for o in self.options if o.value == key)
-        
-        view = discord.ui.View()
+
+        row = discord.ui.ActionRow()
         if self.category == "roles":
-            view.add_item(ConfigRoleSelect(key, name))
+            row.add_item(ConfigRoleSelect(key, name))
         elif self.category == "channels":
-            c_types = [discord.ChannelType.text]
-            if "category" in key:
-                c_types = [discord.ChannelType.category]
-            view.add_item(ConfigChannelSelect(key, name, channel_types=c_types))
-            
-        await interaction.response.send_message(embed=make_embed(f"Configure {name}", f"> Select the new **{name}** below.", kind="info", scope=SCOPE_SYSTEM, guild=interaction.guild), view=view, ephemeral=True)
+            c_types = [discord.ChannelType.category] if "category" in key else [discord.ChannelType.text]
+            row.add_item(ConfigChannelSelect(key, name, channel_types=c_types))
+
+        view = discord.ui.LayoutView(timeout=180)
+        container = discord.ui.Container(accent_colour=THEME_ORANGE)
+        container.add_item(discord.ui.TextDisplay(f"## Configure {name}"))
+        container.add_item(discord.ui.TextDisplay(f"> Select the new **{name}** below."))
+        container.add_item(row)
+        view.add_item(container)
+        await interaction.response.send_message(view=view, ephemeral=True)
 
 class EscalationMatrixModal(discord.ui.Modal, title="Edit Punishment Scaling"):
     matrix_json = discord.ui.TextInput(
@@ -407,74 +416,107 @@ class SetupDashboardActionSelect(discord.ui.Select):
             await interaction.response.send_message(embed=build_setup_validation_embed(interaction.guild, findings), ephemeral=True)
 
 
-class SetupRolesView(discord.ui.View):
-    def __init__(self):
+def _roles_summary(config) -> str:
+    return (
+        f"**Owner** · <@&{config.get('role_owner', DEFAULT_ROLE_OWNER)}>\n"
+        f"**Admin** · <@&{config.get('role_admin', DEFAULT_ROLE_ADMIN)}>\n"
+        f"**Moderator** · <@&{config.get('role_mod', DEFAULT_ROLE_MOD)}>\n"
+        f"**Community Manager** · <@&{config.get('role_community_manager', DEFAULT_ROLE_COMMUNITY_MANAGER)}>\n"
+        f"**Anchor** · <@&{config.get('role_anchor', DEFAULT_ANCHOR_ROLE_ID)}>"
+    )
+
+
+def _channels_summary(config) -> str:
+    def _ch(key: str) -> str:
+        return f"<#{config[key]}>" if config.get(key) else "*Not set*"
+    return (
+        f"**General Log** · {_ch('general_log_channel_id')}\n"
+        f"**Punishment Log** · {_ch('punishment_log_channel_id')}\n"
+        f"**Appeal** · {_ch('appeal_channel_id')}\n"
+        f"**AutoMod Log** · {_ch('automod_log_channel_id')}\n"
+        f"**AutoMod Reports** · {_ch('automod_report_channel_id')}\n"
+        f"**Archive Category** · {_ch('category_archive')}\n"
+        f"**Modmail Inbox** · {_ch('modmail_inbox_channel')}\n"
+        f"**Modmail Action Log** · {_ch('modmail_action_log_channel')}\n"
+        f"**Modmail Panel** · {_ch('modmail_panel_channel')}"
+    )
+
+
+class SetupRolesView(discord.ui.LayoutView):
+    def __init__(self) -> None:
         super().__init__(timeout=180)
-        self.add_item(ConfigTypeSelect("roles", row=0))
+        container = discord.ui.Container(accent_colour=THEME_ORANGE)
+        container.add_item(discord.ui.TextDisplay("## Configure Roles"))
+        container.add_item(discord.ui.TextDisplay(_roles_summary(bot.data_manager.config)))
+        container.add_item(discord.ui.Separator())
+        container.add_item(discord.ui.TextDisplay("-# Use the dropdown to update a role."))
+        row = discord.ui.ActionRow()
+        row.add_item(ConfigTypeSelect("roles"))
+        container.add_item(row)
+        self.add_item(container)
 
 
-class SetupChannelsView(discord.ui.View):
-    def __init__(self):
+class SetupChannelsView(discord.ui.LayoutView):
+    def __init__(self) -> None:
         super().__init__(timeout=180)
-        self.add_item(ConfigTypeSelect("channels", row=0))
+        container = discord.ui.Container(accent_colour=THEME_ORANGE)
+        container.add_item(discord.ui.TextDisplay("## Configure Channels"))
+        container.add_item(discord.ui.TextDisplay(_channels_summary(bot.data_manager.config)))
+        container.add_item(discord.ui.Separator())
+        container.add_item(discord.ui.TextDisplay("-# Use the dropdown to update a channel."))
+        row = discord.ui.ActionRow()
+        row.add_item(ConfigTypeSelect("channels"))
+        container.add_item(row)
+        self.add_item(container)
 
 
-class SetupOtherView(discord.ui.View):
-    def __init__(self):
+class SetupOtherView(discord.ui.LayoutView):
+    def __init__(self) -> None:
         super().__init__(timeout=180)
-        self.add_item(SetupDashboardActionSelect())
+        container = discord.ui.Container(accent_colour=THEME_ORANGE)
+        container.add_item(discord.ui.TextDisplay("## Other Settings"))
+        container.add_item(discord.ui.TextDisplay(
+            "> Set the Guild ID, send the modmail panel, or run a full configuration validation check."
+        ))
+        container.add_item(discord.ui.Separator())
+        row = discord.ui.ActionRow()
+        row.add_item(SetupDashboardActionSelect())
+        container.add_item(row)
+        self.add_item(container)
 
 
-class SetupLandingView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=180)
-
-    @discord.ui.button(label="Roles", style=discord.ButtonStyle.primary, row=0)
+class SetupLandingButtons(discord.ui.ActionRow):
+    @discord.ui.button(label="Roles", style=discord.ButtonStyle.primary)
     async def roles_btn(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
-        config = bot.data_manager.config
-        from core.constants import DEFAULT_ROLE_OWNER, DEFAULT_ROLE_ADMIN, DEFAULT_ROLE_MOD, DEFAULT_ROLE_COMMUNITY_MANAGER, DEFAULT_ANCHOR_ROLE_ID
-        embed = discord.Embed(title="Configure Roles", color=discord.Color.blurple())
-        embed.description = (
-            f"**Owner:** <@&{config.get('role_owner', DEFAULT_ROLE_OWNER)}>\n"
-            f"**Admin:** <@&{config.get('role_admin', DEFAULT_ROLE_ADMIN)}>\n"
-            f"**Moderator:** <@&{config.get('role_mod', DEFAULT_ROLE_MOD)}>\n"
-            f"**Community Manager:** <@&{config.get('role_community_manager', DEFAULT_ROLE_COMMUNITY_MANAGER)}>\n"
-            f"**Anchor Role:** <@&{config.get('role_anchor', DEFAULT_ANCHOR_ROLE_ID)}>\n\n"
-            "Use the dropdown below to update a role."
-        )
-        await interaction.response.send_message(embed=embed, view=SetupRolesView(), ephemeral=True)
+        await interaction.response.send_message(view=SetupRolesView(), ephemeral=True)
 
-    @discord.ui.button(label="Channels", style=discord.ButtonStyle.primary, row=0)
+    @discord.ui.button(label="Channels", style=discord.ButtonStyle.primary)
     async def channels_btn(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
-        config = bot.data_manager.config
-        def _ch(key): return f"<#{config[key]}>" if config.get(key) else "Not set"
-        embed = discord.Embed(title="Configure Channels", color=discord.Color.blurple())
-        embed.description = (
-            f"**General Log:** {_ch('general_log_channel_id')}\n"
-            f"**Punishment Log:** {_ch('punishment_log_channel_id')}\n"
-            f"**Appeal:** {_ch('appeal_channel_id')}\n"
-            f"**AutoMod Log:** {_ch('automod_log_channel_id')}\n"
-            f"**AutoMod Reports:** {_ch('automod_report_channel_id')}\n"
-            f"**Archive Category:** {_ch('category_archive')}\n"
-            f"**Modmail Inbox:** {_ch('modmail_inbox_channel')}\n"
-            f"**Modmail Action Log:** {_ch('modmail_action_log_channel')}\n\n"
-            f"**Modmail Panel:** {_ch('modmail_panel_channel')}\n\n"
-            "Use the dropdown below to update a channel."
-        )
-        await interaction.response.send_message(embed=embed, view=SetupChannelsView(), ephemeral=True)
+        await interaction.response.send_message(view=SetupChannelsView(), ephemeral=True)
 
-    @discord.ui.button(label="Other", style=discord.ButtonStyle.secondary, row=0)
+    @discord.ui.button(label="Other", style=discord.ButtonStyle.secondary)
     async def other_btn(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
-        embed = make_embed("Other Settings", "> Set the Guild ID, send the modmail panel, or run a full configuration validation check.", kind="info", scope=SCOPE_SYSTEM, guild=interaction.guild)
-        await interaction.response.send_message(embed=embed, view=SetupOtherView(), ephemeral=True)
+        await interaction.response.send_message(view=SetupOtherView(), ephemeral=True)
+
+
+class SetupLandingView(discord.ui.LayoutView):
+    def __init__(self) -> None:
+        super().__init__(timeout=180)
+        container = discord.ui.Container(accent_colour=THEME_ORANGE)
+        container.add_item(discord.ui.TextDisplay("## Server Configuration"))
+        container.add_item(discord.ui.TextDisplay(
+            "> Configure your server's roles, channels, and guild-wide settings using the buttons below."
+        ))
+        container.add_item(discord.ui.Separator())
+        container.add_item(SetupLandingButtons())
+        self.add_item(container)
 
 
 @tree.command(name="setup", description="Configure server roles and channels.")
 @app_commands.default_permissions(administrator=True)
 @app_commands.check(check_admin)
 async def setup_slash(interaction: discord.Interaction):
-    embed = build_setup_dashboard_embed(interaction.guild)
-    await interaction.response.send_message(embed=embed, view=SetupLandingView(), ephemeral=True)
+    await interaction.response.send_message(view=SetupLandingView(), ephemeral=True)
 
 @tree.command(name="config", description="Manage bot settings and backups.")
 @app_commands.default_permissions(administrator=True)

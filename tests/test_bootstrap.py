@@ -60,6 +60,21 @@ class MbxBootstrapTests(unittest.TestCase):
 
         asyncio.run(runner())
 
+    def test_setup_landing_is_components_v2(self):
+        # The /setup dashboard is a Components V2 LayoutView with the nav buttons.
+        async def runner():
+            from cogs.config import SetupLandingView
+            components = SetupLandingView().to_components()
+            self.assertEqual(components[0]["type"], 17)  # Container
+            labels = [
+                button["label"]
+                for child in components[0]["components"] if child["type"] == 1
+                for button in child["components"]
+            ]
+            self.assertEqual(labels, ["Roles", "Channels", "Other"])
+
+        asyncio.run(runner())
+
     def test_setup_exposes_modmail_panel_controls(self):
         channel_select = ConfigTypeSelect("channels")
         self.assertIn(
