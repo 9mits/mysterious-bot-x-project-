@@ -681,33 +681,17 @@ async def _send_log_to_channels(
         return False
 
     normalized_embed = normalize_log_embed(embed, guild=guild)
-
-    def _build_files():
-        if not attachments:
-            return None
-        return [discord.File(io.BytesIO(data), filename=filename) for filename, data in attachments]
-
     for channel_id in channel_ids:
         channel = guild.get_channel_or_thread(channel_id) or guild.get_channel(channel_id)
         if channel is None:
             logger.warning("Configured %s channel %s was not found in guild %s.", log_label, channel_id, guild.id)
             continue
         try:
-            # Interactive logs (with a button/select view) stay on legacy embeds
-            # until the interactive V2 conversion phase.
-            if view is not None:
-                await channel.send(content=content, embed=normalized_embed, view=view, files=_build_files())
-                return True
-            # Display-only logs render as Components V2.
-            try:
-                filenames = [filename for filename, _ in attachments] if attachments else None
-                panel = embed_to_panel(normalized_embed, content=content, attachment_filenames=filenames)
-                await channel.send(view=panel, files=_build_files())
-                return True
-            except Exception as v2_exc:
-                logger.warning("V2 %s send failed (%s); falling back to embed.", log_label, v2_exc)
-                await channel.send(content=content, embed=normalized_embed, files=_build_files())
-                return True
+            files = None
+            if attachments:
+                files = [discord.File(io.BytesIO(data), filename=filename) for filename, data in attachments]
+            await channel.send(content=content, embed=normalized_embed, view=view, files=files)
+            return True
         except Exception as exc:
             logger.warning("Failed to send %s to channel %s: %s", log_label, channel_id, exc)
     return False
@@ -765,11 +749,10 @@ def has_permission_capability(interaction: discord.Interaction, capability: str)
 
 async def respond_with_error(interaction: discord.Interaction, message: str, *, scope: str = SCOPE_SYSTEM):
     embed = make_error_embed("Request Failed", f"> {message}", scope=scope, guild=interaction.guild)
-    panel = embed_to_panel(embed)
     if not interaction.response.is_done():
-        await interaction.response.send_message(view=panel, ephemeral=True)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
     else:
-        await interaction.followup.send(view=panel, ephemeral=True)
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
 
 def is_staff_member(member: discord.Member) -> bool:
