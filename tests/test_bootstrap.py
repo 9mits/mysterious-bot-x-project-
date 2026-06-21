@@ -47,6 +47,19 @@ class MbxBootstrapTests(unittest.TestCase):
 
         asyncio.run(runner())
 
+    def test_embed_to_panel_renders_components_v2(self):
+        # The shared embed->V2 converter underpins all display-only logs/errors.
+        async def runner():
+            embed = shared_module.make_embed("Title", "> Body", kind="danger")
+            embed.add_field(name="Field", value="Value", inline=True)
+            panel = shared_module.embed_to_panel(embed)
+            components = panel.to_components()
+            # A single top-level Container (type 17) holding the rendered embed.
+            self.assertEqual(components[0]["type"], 17)
+            self.assertTrue(components[0]["components"])
+
+        asyncio.run(runner())
+
     def test_setup_exposes_modmail_panel_controls(self):
         channel_select = ConfigTypeSelect("channels")
         self.assertIn(

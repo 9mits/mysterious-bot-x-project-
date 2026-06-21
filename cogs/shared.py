@@ -33,6 +33,7 @@ from core.constants import (
     SCOPE_ROLES,
     SCOPE_SUPPORT,
     SCOPE_SYSTEM,
+    THEME_ORANGE,
     TOKEN_ENV_VARS,
 )
 from core.services import (
@@ -680,17 +681,33 @@ async def _send_log_to_channels(
         return False
 
     normalized_embed = normalize_log_embed(embed, guild=guild)
+
+    def _build_files():
+        if not attachments:
+            return None
+        return [discord.File(io.BytesIO(data), filename=filename) for filename, data in attachments]
+
     for channel_id in channel_ids:
         channel = guild.get_channel_or_thread(channel_id) or guild.get_channel(channel_id)
         if channel is None:
             logger.warning("Configured %s channel %s was not found in guild %s.", log_label, channel_id, guild.id)
             continue
         try:
-            files = None
-            if attachments:
-                files = [discord.File(io.BytesIO(data), filename=filename) for filename, data in attachments]
-            await channel.send(content=content, embed=normalized_embed, view=view, files=files)
-            return True
+            # Interactive logs (with a button/select view) stay on legacy embeds
+            # until the interactive V2 conversion phase.
+            if view is not None:
+                await channel.send(content=content, embed=normalized_embed, view=view, files=_build_files())
+                return True
+            # Display-only logs render as Components V2.
+            try:
+                filenames = [filename for filename, _ in attachments] if attachments else None
+                panel = embed_to_panel(normalized_embed, content=content, attachment_filenames=filenames)
+                await channel.send(view=panel, files=_build_files())
+                return True
+            except Exception as v2_exc:
+                logger.warning("V2 %s send failed (%s); falling back to embed.", log_label, v2_exc)
+                await channel.send(content=content, embed=normalized_embed, files=_build_files())
+                return True
         except Exception as exc:
             logger.warning("Failed to send %s to channel %s: %s", log_label, channel_id, exc)
     return False
@@ -748,10 +765,11 @@ def has_permission_capability(interaction: discord.Interaction, capability: str)
 
 async def respond_with_error(interaction: discord.Interaction, message: str, *, scope: str = SCOPE_SYSTEM):
     embed = make_error_embed("Request Failed", f"> {message}", scope=scope, guild=interaction.guild)
+    panel = embed_to_panel(embed)
     if not interaction.response.is_done():
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.response.send_message(view=panel, ephemeral=True)
     else:
-        await interaction.followup.send(embed=embed, ephemeral=True)
+        await interaction.followup.send(view=panel, ephemeral=True)
 
 
 def is_staff_member(member: discord.Member) -> bool:
@@ -875,6 +893,72 @@ def make_analytics_card(
     guild: Optional[discord.Guild] = None,
 ) -> discord.Embed:
     return make_embed(title, description, kind="analytics", scope=SCOPE_ANALYTICS, guild=guild)
+
+
+def embed_to_panel(
+    embed: discord.Embed,
+    *,
+    content: Optional[str] = None,
+    attachment_filenames: Optional[List[str]] = None,
+) -> "discord.ui.LayoutView":
+    """Render a discord.Embed as a Components V2 LayoutView.
+
+    Lets the bot keep all its existing make_embed/add_field construction while
+    presenting the result as a V2 container (accent bar + dividers + sections)
+    instead of a legacy embed. Display-only — interactive components are added
+    by the caller via a LayoutView when needed.
+    """
+    view = discord.ui.LayoutView(timeout=None)
+    container = discord.ui.Container(accent_colour=embed.colour or THEME_ORANGE)
+
+    if content:
+        container.add_item(discord.ui.TextDisplay(content))
+    if embed.author and embed.author.name:
+        container.add_item(discord.ui.TextDisplay(f"-# {embed.author.name}"))
+
+    thumb = embed.thumbnail.url if embed.thumbnail else None
+    header = f"## {embed.title}" if embed.title else None
+    if header and thumb:
+        section = discord.ui.Section(accessory=discord.ui.Thumbnail(media=thumb))
+        section.add_item(discord.ui.TextDisplay(header))
+        if embed.description:
+            section.add_item(discord.ui.TextDisplay(embed.description))
+        container.add_item(section)
+    else:
+        if header:
+            container.add_item(discord.ui.TextDisplay(header))
+        if embed.description:
+            container.add_item(discord.ui.TextDisplay(embed.description))
+        if thumb:
+            container.add_item(discord.ui.MediaGallery(discord.MediaGalleryItem(media=thumb)))
+
+    if embed.fields:
+        container.add_item(discord.ui.Separator())
+        blocks = [
+            f"**{field.name}**\n{field.value}" if field.name else (field.value or "")
+            for field in embed.fields
+        ]
+        container.add_item(discord.ui.TextDisplay("\n\n".join(blocks)))
+
+    if embed.image and embed.image.url:
+        container.add_item(discord.ui.MediaGallery(discord.MediaGalleryItem(media=embed.image.url)))
+
+    if attachment_filenames:
+        for filename in attachment_filenames:
+            container.add_item(discord.ui.File(media=f"attachment://{filename}"))
+
+    footer_text = embed.footer.text if embed.footer else None
+    if footer_text or embed.timestamp:
+        container.add_item(discord.ui.Separator(visible=False))
+        parts = []
+        if footer_text:
+            parts.append(footer_text)
+        if embed.timestamp:
+            parts.append(f"<t:{int(embed.timestamp.timestamp())}:R>")
+        container.add_item(discord.ui.TextDisplay("-# " + " • ".join(parts)))
+
+    view.add_item(container)
+    return view
 
 
 def join_lines(lines: List[str], fallback: str = "None") -> str:
