@@ -14,7 +14,6 @@ from core.constants import (
     DEFAULT_ROLE_MOD,
     DEFAULT_ROLE_OWNER,
     SCOPE_SYSTEM,
-    THEME_ORANGE,
 )
 from core.services import (
     DEFAULT_ESCALATION_MATRIX,
@@ -27,8 +26,8 @@ from core.context import bot, tree
 from .shared import (
     make_embed,
     make_confirmation_embed,
+    panel_container,
     respond_with_error,
-    build_config_dashboard_embed,
     build_escalation_matrix_embed,
     build_setup_validation_embed,
     check_admin,
@@ -112,9 +111,7 @@ class ConfigTypeSelect(discord.ui.Select):
             row.add_item(ConfigChannelSelect(key, name, channel_types=c_types))
 
         view = discord.ui.LayoutView(timeout=180)
-        container = discord.ui.Container(accent_colour=THEME_ORANGE)
-        container.add_item(discord.ui.TextDisplay(f"## Configure {name}"))
-        container.add_item(discord.ui.TextDisplay(f"> Select the new **{name}** below."))
+        container = panel_container(f"Configure {name}", f"> Select the new **{name}** below.", guild=interaction.guild)
         container.add_item(row)
         view.add_item(container)
         await interaction.response.send_message(view=view, ephemeral=True)
@@ -238,10 +235,19 @@ class ConfigDashboardActionSelect(discord.ui.Select):
             return
 
 
-class ConfigDashboardView(discord.ui.View):
-    def __init__(self):
+class ConfigDashboardView(discord.ui.LayoutView):
+    def __init__(self, guild: Optional[discord.Guild] = None) -> None:
         super().__init__(timeout=180)
-        self.add_item(ConfigDashboardActionSelect())
+        container = panel_container(
+            "Bot Settings",
+            "> Manage backups, imports, and punishment scaling using the menu below.",
+            guild=guild,
+        )
+        container.add_item(discord.ui.Separator())
+        row = discord.ui.ActionRow()
+        row.add_item(ConfigDashboardActionSelect())
+        container.add_item(row)
+        self.add_item(container)
 
 
 class GuildIdModal(discord.ui.Modal, title="Set Guild ID"):
@@ -443,11 +449,9 @@ def _channels_summary(config) -> str:
 
 
 class SetupRolesView(discord.ui.LayoutView):
-    def __init__(self) -> None:
+    def __init__(self, guild: Optional[discord.Guild] = None) -> None:
         super().__init__(timeout=180)
-        container = discord.ui.Container(accent_colour=THEME_ORANGE)
-        container.add_item(discord.ui.TextDisplay("## Configure Roles"))
-        container.add_item(discord.ui.TextDisplay(_roles_summary(bot.data_manager.config)))
+        container = panel_container("Configure Roles", _roles_summary(bot.data_manager.config), guild=guild)
         container.add_item(discord.ui.Separator())
         container.add_item(discord.ui.TextDisplay("-# Use the dropdown to update a role."))
         row = discord.ui.ActionRow()
@@ -457,11 +461,9 @@ class SetupRolesView(discord.ui.LayoutView):
 
 
 class SetupChannelsView(discord.ui.LayoutView):
-    def __init__(self) -> None:
+    def __init__(self, guild: Optional[discord.Guild] = None) -> None:
         super().__init__(timeout=180)
-        container = discord.ui.Container(accent_colour=THEME_ORANGE)
-        container.add_item(discord.ui.TextDisplay("## Configure Channels"))
-        container.add_item(discord.ui.TextDisplay(_channels_summary(bot.data_manager.config)))
+        container = panel_container("Configure Channels", _channels_summary(bot.data_manager.config), guild=guild)
         container.add_item(discord.ui.Separator())
         container.add_item(discord.ui.TextDisplay("-# Use the dropdown to update a channel."))
         row = discord.ui.ActionRow()
@@ -471,13 +473,13 @@ class SetupChannelsView(discord.ui.LayoutView):
 
 
 class SetupOtherView(discord.ui.LayoutView):
-    def __init__(self) -> None:
+    def __init__(self, guild: Optional[discord.Guild] = None) -> None:
         super().__init__(timeout=180)
-        container = discord.ui.Container(accent_colour=THEME_ORANGE)
-        container.add_item(discord.ui.TextDisplay("## Other Settings"))
-        container.add_item(discord.ui.TextDisplay(
-            "> Set the Guild ID, send the modmail panel, or run a full configuration validation check."
-        ))
+        container = panel_container(
+            "Other Settings",
+            "> Set the Guild ID, send the modmail panel, or run a full configuration validation check.",
+            guild=guild,
+        )
         container.add_item(discord.ui.Separator())
         row = discord.ui.ActionRow()
         row.add_item(SetupDashboardActionSelect())
@@ -488,25 +490,25 @@ class SetupOtherView(discord.ui.LayoutView):
 class SetupLandingButtons(discord.ui.ActionRow):
     @discord.ui.button(label="Roles", style=discord.ButtonStyle.primary)
     async def roles_btn(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
-        await interaction.response.send_message(view=SetupRolesView(), ephemeral=True)
+        await interaction.response.send_message(view=SetupRolesView(interaction.guild), ephemeral=True)
 
     @discord.ui.button(label="Channels", style=discord.ButtonStyle.primary)
     async def channels_btn(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
-        await interaction.response.send_message(view=SetupChannelsView(), ephemeral=True)
+        await interaction.response.send_message(view=SetupChannelsView(interaction.guild), ephemeral=True)
 
     @discord.ui.button(label="Other", style=discord.ButtonStyle.secondary)
     async def other_btn(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
-        await interaction.response.send_message(view=SetupOtherView(), ephemeral=True)
+        await interaction.response.send_message(view=SetupOtherView(interaction.guild), ephemeral=True)
 
 
 class SetupLandingView(discord.ui.LayoutView):
-    def __init__(self) -> None:
+    def __init__(self, guild: Optional[discord.Guild] = None) -> None:
         super().__init__(timeout=180)
-        container = discord.ui.Container(accent_colour=THEME_ORANGE)
-        container.add_item(discord.ui.TextDisplay("## Server Configuration"))
-        container.add_item(discord.ui.TextDisplay(
-            "> Configure your server's roles, channels, and guild-wide settings using the buttons below."
-        ))
+        container = panel_container(
+            "Server Configuration",
+            "> Configure your server's roles, channels, and guild-wide settings using the buttons below.",
+            guild=guild,
+        )
         container.add_item(discord.ui.Separator())
         container.add_item(SetupLandingButtons())
         self.add_item(container)
@@ -516,7 +518,7 @@ class SetupLandingView(discord.ui.LayoutView):
 @app_commands.default_permissions(administrator=True)
 @app_commands.check(check_admin)
 async def setup_slash(interaction: discord.Interaction):
-    await interaction.response.send_message(view=SetupLandingView(), ephemeral=True)
+    await interaction.response.send_message(view=SetupLandingView(interaction.guild), ephemeral=True)
 
 @tree.command(name="config", description="Manage bot settings and backups.")
 @app_commands.default_permissions(administrator=True)
@@ -525,8 +527,7 @@ async def config_cmd(interaction: discord.Interaction):
     if not get_feature_flag(bot.data_manager.config, "config_panel", True):
         await respond_with_error(interaction, "The bot settings panel is currently turned off in the feature settings.", scope=SCOPE_SYSTEM)
         return
-    embed = build_config_dashboard_embed(interaction.guild)
-    await interaction.response.send_message(embed=embed, view=ConfigDashboardView(), ephemeral=True)
+    await interaction.response.send_message(view=ConfigDashboardView(interaction.guild), ephemeral=True)
 
 
 @tree.command(name="modmail-panel", description="Post the public modmail support panel.")

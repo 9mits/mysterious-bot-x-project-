@@ -27,12 +27,12 @@ from .shared import (
     format_reason_value,
     make_embed,
     brand_embed,
+    panel_container,
     format_user_ref,
     send_log,
     has_permission_capability,
     is_staff,
     build_status_embed,
-    build_rules_dashboard_embed,
 )
 from .cases import (
     get_case_label,
@@ -394,10 +394,7 @@ class ImmunityModal(discord.ui.Modal):
         await bot.data_manager.save_config()
         await interaction.response.send_message(embed=make_embed("Immunity Updated", f"> {msg}", kind="success", scope=SCOPE_SYSTEM, guild=interaction.guild), ephemeral=True)
 
-class SafetyView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)
-        
+class SafetyButtons(discord.ui.ActionRow):
     @discord.ui.button(label="Add User", style=discord.ButtonStyle.success)
     async def add_user(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         await interaction.response.send_modal(ImmunityModal("add"))
@@ -414,6 +411,19 @@ class SafetyView(discord.ui.View):
         else:
             mentions = [f"<@{uid}>" for uid in lst]
             await interaction.response.send_message(embed=make_embed("Immune Users", "> " + ", ".join(mentions), kind="info", scope=SCOPE_SYSTEM, guild=interaction.guild), ephemeral=True)
+
+
+class SafetyView(discord.ui.LayoutView):
+    def __init__(self, guild: "discord.Guild | None" = None) -> None:
+        super().__init__(timeout=None)
+        container = panel_container(
+            "Anti-Nuke Safety Panel",
+            "> Manage users who are immune to automated anti-nuke enforcement.",
+            guild=guild,
+        )
+        container.add_item(discord.ui.Separator())
+        container.add_item(SafetyButtons())
+        self.add_item(container)
 
 class AntiNukeResolveConfirm2(discord.ui.View):
     def __init__(self, restore_data, origin_message):
@@ -738,20 +748,13 @@ async def clone(interaction: discord.Interaction):
 @app_commands.default_permissions(administrator=True)
 @app_commands.check(check_admin)
 async def rules(interaction: discord.Interaction):
-    await interaction.response.send_message(embed=build_rules_dashboard_embed(interaction.guild), view=RulesDashboardView(), ephemeral=True)
+    await interaction.response.send_message(view=RulesDashboardView(interaction.guild), ephemeral=True)
 
 @tree.command(name="security", description="Manage anti-nuke protections.")
 @app_commands.default_permissions(administrator=True)
 @app_commands.check(check_admin)
 async def safety_panel(interaction: discord.Interaction):
-    embed = make_embed(
-        "Anti-Nuke Safety Panel",
-        "> Manage users who are immune to automated anti-nuke enforcement.",
-        kind="warning",
-        scope=SCOPE_SYSTEM,
-        guild=interaction.guild,
-    )
-    await interaction.response.send_message(embed=embed, view=SafetyView(), ephemeral=True)
+    await interaction.response.send_message(view=SafetyView(interaction.guild), ephemeral=True)
 
 @tree.command(name="access", description="Manage moderation access roles.")
 @app_commands.default_permissions(administrator=True)

@@ -26,6 +26,7 @@ from core.services import (
 from core.utils import now_iso, parse_duration_str
 from .shared import (
     format_duration,
+    panel_container,
     format_log_quote,
     format_reason_value,
     format_user_ref,
@@ -748,10 +749,7 @@ def generate_transcript_html(messages, user):
     html_parts.append('</div></body></html>')
     return "\n".join(html_parts)
 
-class RulesDashboardView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)
-
+class RulesDashboardButtons(discord.ui.ActionRow):
     @discord.ui.button(label="List Rules", style=discord.ButtonStyle.primary)
     async def list_rules(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         rules = bot.data_manager.config.get("punishment_rules", DEFAULT_RULES)
@@ -785,6 +783,21 @@ class RulesDashboardView(discord.ui.View):
     async def delete_rule(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         await interaction.response.send_message(embed=make_embed("Delete Rule", "> Select the rule you want to delete below.", kind="warning", scope=SCOPE_SYSTEM, guild=interaction.guild), view=RuleDeleteView(), ephemeral=True)
 
+
+class RulesDashboardView(discord.ui.LayoutView):
+    def __init__(self, guild: "discord.Guild | None" = None) -> None:
+        super().__init__(timeout=None)
+        rules = bot.data_manager.config.get("punishment_rules", DEFAULT_RULES)
+        container = panel_container(
+            "Punishment Scaling Rules",
+            "> Preset rule baselines used by the punishment console. "
+            "Base = first offence, Escalated = repeat offence.",
+            guild=guild,
+        )
+        container.add_item(discord.ui.TextDisplay(f"**Configured rules** · {len(rules)}"))
+        container.add_item(discord.ui.Separator())
+        container.add_item(RulesDashboardButtons())
+        self.add_item(container)
 
 
 async def setup(bot) -> None:

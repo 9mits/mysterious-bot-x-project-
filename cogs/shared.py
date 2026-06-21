@@ -878,6 +878,35 @@ def make_analytics_card(
     return make_embed(title, description, kind="analytics", scope=SCOPE_ANALYTICS, guild=guild)
 
 
+def panel_container(
+    title: str,
+    description: Optional[str] = None,
+    *,
+    guild: Optional[discord.Guild] = None,
+    accent: Optional[discord.Colour] = None,
+) -> "discord.ui.Container":
+    """A Components V2 Container with a branded header.
+
+    Renders the title (and optional description) and, when the guild has an
+    icon, places that icon as a thumbnail accessory beside the header.
+    Callers add their own components (text, dropdowns, buttons) to the returned
+    container, then add it to a LayoutView.
+    """
+    container = discord.ui.Container(accent_colour=accent or THEME_ORANGE)
+    icon_url = guild.icon.url if (guild and guild.icon) else None
+    if icon_url:
+        section = discord.ui.Section(accessory=discord.ui.Thumbnail(media=icon_url))
+        section.add_item(discord.ui.TextDisplay(f"## {title}"))
+        if description:
+            section.add_item(discord.ui.TextDisplay(description))
+        container.add_item(section)
+    else:
+        container.add_item(discord.ui.TextDisplay(f"## {title}"))
+        if description:
+            container.add_item(discord.ui.TextDisplay(description))
+    return container
+
+
 def embed_to_panel(
     embed: discord.Embed,
     *,
