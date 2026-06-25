@@ -1,5 +1,8 @@
 __pycache__/
 *.pyc
+.venv/
+venv/
+*.json.bak
 .DS_Store
 .env
 .env.bot1
