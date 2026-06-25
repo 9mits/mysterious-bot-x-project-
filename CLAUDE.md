@@ -1,52 +1,187 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Instructions for Claude Code when working in this repository.
+Read this fully before taking any action. These rules override defaults.
+
+---
+
+## The one rule that matters most
+
+**Never merge to `main` without explicit user confirmation.**
+
+The loop is: branch → code → test → push → PR → watch CI → fix failures →
+report back "CI is green, ready to merge?" → wait → user says "merge" → then
+merge + deploy. Do not skip the pause. Do not merge proactively. Always wait.
+
+---
 
 ## Running the bot
 
 ```bash
-# Single bot — requires a Discord bot token in the environment
-DISCORD_BOT_TOKEN=your_token python3 main.py
+# Single bot (dev / debugging)
+DISCORD_BOT_TOKEN=your_token python main.py
 
-# Or place the token in a .env file — read via python-dotenv if present.
+# All bots at once — one process per .env.bot* file found
+python start.py
 
-# Multiple bots at once — start.py launches one process per env file it finds
-# (.env.bot1, .env.bot2, .env.test):
-python3 start.py
+# Staging only (test bot, local machine)
+python run_test.py          # loads .env.test, never touches live tokens
+
+# Deploy to production
+python panel.py restart     # BisectHosting panel pulls main + restarts
+python panel.py status      # check state (expect: running)
 ```
 
-Each per-bot env file sets its own `DISCORD_BOT_TOKEN` (or a custom var named in
-`config.json:"token_env_var"`), and typically its own `BOT_DATA_DIR`
-(e.g. `database-bot1/`, `database-bot2/`) and `BOT_BRAND_NAME`. Env files and
-per-bot database dirs are git-ignored.
+---
 
-## Tests
+## Tests and lint
+
+Always run both before committing. CI runs exactly these:
 
 ```bash
-# Run all tests from the project root
-python3 -m unittest discover -s tests
-
-# Run a single test file
-python3 -m unittest tests.test_data
-
-# Run a single test case
-python3 -m unittest tests.test_bootstrap.BootstrapTests.test_create_bot_does_not_require_token
+python -m unittest discover -s tests          # 38 tests, no Discord connection needed
+python -m pyflakes core/ cogs/ tests/         # lint
+python -m py_compile cogs/*.py                # syntax check
 ```
 
-Tests run without a real Discord connection. `cogs/testkit.py` is a test-only
-cog loaded **only** when `TEST_MODE=1`.
+Tests run without a real Discord connection. `cogs/testkit.py` is loaded only
+under `TEST_MODE=1`.
 
-## Static analysis
+---
 
+## Development workflow (autonomous PR loop)
+
+When working on any change, follow this loop exactly:
+
+### 1. Branch — never commit to `main` directly
 ```bash
-python3 -m pyflakes core/ cogs/ tests/
-python3 -m py_compile cogs/*.py   # syntax check individual cogs
+git checkout main && git pull
+git checkout -b fix/short-description   # or feat/ chore/ refactor/
 ```
 
-## Dependencies
-
+### 2. Code, then verify locally
 ```bash
-pip install -r requirements.txt  # discord.py>=2.6, aiohttp>=3.13, aiosqlite>=0.22
+python -m unittest discover -s tests
+python -m pyflakes core/ cogs/ tests/
+```
+
+### 3. Commit and push
+```bash
+git add <specific files>    # never git add -A without reviewing what's staged
+git commit -m "fix: short description of what changed and why"
+git push -u origin <branch>
+```
+
+### 4. Open PR via gh CLI
+```bash
+& "C:\Program Files\GitHub CLI\gh.exe" pr create --title "..." --body "..." --base main
+```
+
+### 5. Watch CI — fix failures on the branch, never force-merge
+```bash
+& "C:\Program Files\GitHub CLI\gh.exe" pr checks <number> --repo 9mits/custom-discord-bot
+```
+Both `test (3.11)` and `test (3.12)` must be green. If either fails, fix and
+re-push. Do not report back until CI is fully green.
+
+### 6. STOP — report back and wait for merge confirmation
+Say: "CI is green — ready to merge?" Show what changed. Do not proceed.
+
+### 7. After user says "merge"
+```bash
+& "C:\Program Files\GitHub CLI\gh.exe" pr merge <number> --squash --delete-branch
+git checkout main && git pull
+python panel.py restart     # deploy
+python panel.py status      # confirm running
+```
+
+### Branch protection
+`main` is protected by GitHub Ruleset ID `18121569`:
+- PR required (no direct pushes — they are blocked)
+- `test (3.11)` + `test (3.12)` must pass
+- 0 approvals required (solo dev, so auto-merge works)
+- No force-push, no branch deletion
+
+### gh CLI
+Path: `C:\Program Files\GitHub CLI\gh.exe` (authenticated as `9mits`).
+May not be on `PATH` in fresh PowerShell — always use the full path.
+
+---
+
+## Environments
+
+| Stage | Entry point | Tokens used | Where it runs |
+|---|---|---|---|
+| local | `python -m unittest ...` | none | dev machine |
+| staging | `python run_test.py` | `.env.test` only | dev machine (local) |
+| production | `python panel.py restart` | `.env.bot1` + `.env.bot2` | BisectHosting panel |
+
+The staging bot is **local only** — it is NOT on the BisectHosting panel.
+The panel runs `start.py`, which picks up only `.env.bot1` and `.env.bot2`
+(`.env.test` was deleted from the panel to prevent double-running the test token).
+
+---
+
+## Hosting — BisectHosting (Pterodactyl)
+
+- One panel server, ID `19d7e6d1`, at `games.bisecthosting.com`
+- On every restart the panel auto-pulls from the `main` branch of
+  `github.com/9mits/custom-discord-bot` and reinstalls pip packages
+- There is no SSH / shell / systemd — the only deploy path is `panel.py restart`
+- `panel.py` wraps the Pterodactyl client API (stdlib only, no dependencies)
+- Credentials: git-ignored `.panel.env` — **never commit this file**
+- Cloudflare blocks Python's default urllib user-agent; `panel.py` already sends
+  a browser UA to work around this
+- `core/bot.py:on_ready` prints `"successfully finished startup"` — BisectHosting
+  watches for this exact phrase to flip the server state from `starting` → `running`
+
+---
+
+## Files — what everything is
+
+```
+main.py                  Entry point: from core.bot import run
+start.py                 Multi-bot launcher: one process per .env.bot* file
+run_test.py              Staging launcher: loads .env.test only, never live tokens
+panel.py                 BisectHosting panel API wrapper (deploy / status)
+.panel.env               Panel credentials — git-ignored, NEVER commit
+WORKFLOW.md              Human-readable version of this workflow
+
+core/
+  bot.py                 MGXBot class, intents, background tasks, EXTENSIONS, lifecycle
+  data.py                DataManager (all persistence), AntiAbuseSystem, resolve_bot_token
+  services.py            Business logic: config validation, escalation matrix, normalization
+  constants.py           IDs, brand strings, colour palette, scope labels, TOKEN_ENV_VARS
+  context.py             Module-level proxy singletons: bot, tree, abuse_system
+  models.py              Dataclasses: CaseMetadata, EscalationStep, ValidationFinding, CaseNote
+  utils.py               Stateless helpers: parse_duration_str, format_duration, truncate_text
+
+cogs/
+  shared.py              Shared embed builders, log senders, permission checks (no Cog class)
+  cases.py               Case management: embed builders, interactive views, undo/appeal flows
+  history.py             History + case-panel UI views
+  case_panel.py          Case panel views and HTML transcript export
+  moderation.py          execute_punishment, ModGroup slash commands, /punish
+  roles.py               Custom booster role CRUD, AppealView, build_punish_embed
+  derole.py              /derole bulk role-removal workflow
+  modmail.py             Support ticket relay, control/panel views, ticket management
+  automod.py             Native + smart automod engine, policy views, report flows, /automod
+  config.py              /setup, /config commands, all settings views
+  analytics.py           /stats, /directory, staff profile views
+  admin.py               Admin commands, anti-nuke views, branding
+  events.py              Event listeners + native AutoMod bridge
+  event_leaderboard.py   Limited-time VC-time leaderboard (EVENT_CONTROL=1 flag)
+  registry.py            Cog dependency graph / circular-import boundaries
+  testkit.py             Test-only cog, loaded only under TEST_MODE=1
+
+.github/
+  workflows/ci.yml                  Matrix CI: py_compile + pyflakes + unittest (3.11 + 3.12)
+  PULL_REQUEST_TEMPLATE.md          PR checklist
+
+.claude/memory/                     Project memory files (workflow context, decisions)
+
+database/                           Runtime: bot.db (SQLite, auto-created — git-ignored)
+tests/                              unittest suite
 ```
 
 ---
@@ -54,181 +189,76 @@ pip install -r requirements.txt  # discord.py>=2.6, aiohttp>=3.13, aiosqlite>=0.
 ## Architecture
 
 ### Entry point
-
-`main.py` → `core/bot.py:run()` creates `MGXBot`, a `commands.Bot` subclass. On
-`setup_hook` it opens the aiosqlite database, loads all data into memory,
-restores persistent views, and loads the cog extensions in `EXTENSIONS`
-(`core/bot.py`). `testkit` is loaded additionally only under `TEST_MODE`.
-
-### Directory layout
-
-```
-main.py             — Entry point: from core.bot import run
-start.py            — Multi-bot launcher: one process per .env.bot* file
-core/               — Internal framework (no discord UI code)
-  bot.py            — MGXBot class, intents, background tasks, EXTENSIONS tuple, lifecycle
-  data.py           — DataManager (all persistence), AntiAbuseSystem, resolve_bot_token
-  services.py       — Business logic: config validation, escalation matrix, normalization
-  constants.py      — IDs, brand strings, colour palette, scope labels, TOKEN_ENV_VARS, flags
-  context.py        — Module-level proxy singletons: bot, tree, abuse_system
-  models.py         — Dataclasses: CaseMetadata, EscalationStep, ValidationFinding, CaseNote
-  utils.py          — Stateless helpers: parse_duration_str, format_duration, truncate_text …
-cogs/               — discord.py Cog extensions, one per domain
-  shared.py         — Shared embed builders, log senders, permission checks (no Cog class)
-  cases.py          — Case management: embed builders, interactive views, undo/appeal flows
-  history.py        — History + case-panel UI views (split from cases.py)
-  case_panel.py     — Case panel views and HTML transcript export (split from cases.py)
-  moderation.py     — execute_punishment, ModGroup slash commands, punish/history menus, /punish
-  roles.py          — Custom booster role CRUD, role commands, AppealView, build_punish_embed
-  derole.py         — /derole bulk role-removal workflow
-  modmail.py        — Support ticket relay, control/panel views, ticket management
-  automod.py        — Native + smart automod engine, policy views, report flows, /automod
-  config.py         — /setup, /config commands, all settings views
-  analytics.py      — /stats, /directory, staff profile views
-  admin.py          — Admin commands, anti-nuke views, branding (split from system.py)
-  events.py         — Event listeners + native AutoMod bridge (split from system.py)
-  event_leaderboard.py — Limited-time VC-time leaderboard
-  registry.py       — Documents the cog dependency graph / circular-import boundaries
-  testkit.py        — Test-only cog, loaded only under TEST_MODE=1
-database/           — Runtime: bot.db (SQLite, auto-created on first run)
-tests/              — unittest suite (no real Discord connection required)
-```
+`main.py` → `core/bot.py:run()` creates `MGXBot` (`commands.Bot` subclass).
+`setup_hook` opens the aiosqlite database, loads all data into memory, restores
+persistent views, loads cog extensions from `EXTENSIONS`, starts background tasks.
+`testkit` is loaded additionally only under `TEST_MODE=1`.
 
 ### Cog pattern
-
-Every domain file in `cogs/` (except `shared.py`) defines a `*Cog` class and an
-`async def setup(bot)` that calls `await bot.add_cog(...)`. Event listeners are
-`@commands.Cog.listener()` methods on the Cog class (raw `@bot.event` listeners
-live in `events.py`). Slash commands are module-level `@tree.command` decorated
-functions registered to `tree` at import time via `core/context.tree`; `setup()`
-only registers the Cog and its listeners.
+Every domain file in `cogs/` (except `shared.py`) defines a `*Cog` class and
+`async def setup(bot)` that calls `bot.add_cog(...)`. Slash commands are
+module-level `@tree.command` functions registered via `core/context.tree` at
+import time; `setup()` only registers the Cog and its listeners.
 
 ### Data layer
+`DataManager` in `core/data.py` holds all state in-memory, persists to
+`<BOT_DATA_DIR>/bot.db` (SQLite via aiosqlite; defaults to `database/`).
+On first startup it auto-migrates legacy `*.json` files to SQLite.
+Use dirty-flag methods (`mark_config_dirty()`, `save_punishments()`, etc.)
+rather than `save_all()` directly.
 
-`DataManager` in `core/data.py` holds all state in-memory and persists to
-`<BOT_DATA_DIR>/bot.db` (SQLite via aiosqlite; `BOT_DATA_DIR` defaults to
-`database/`). On first startup it auto-migrates any legacy `*.json` files to
-SQLite and renames them to `*.json.bak`.
-
-In-memory structure mirrors the old JSON shape exactly — `data_manager.punishments`
-is `{user_id: [records]}`, `data_manager.config` is a flat dict, etc. Use the
-dirty-flag methods (`mark_config_dirty()`, `save_config()`, `save_punishments()`,
-etc.) rather than calling `save_all()` directly.
-
-### Circular import pattern
-
+### Circular imports
 `shared.py` ↔ `automod.py`/`cases.py`/`roles.py`/`modmail.py`/`admin.py` have
-mutual dependencies. These are resolved with **lazy imports inside function
-bodies** — if you add a cross-domain call, do the same rather than adding a
-top-level import. `cogs/registry.py` documents the full dependency graph.
+mutual dependencies. Resolved with **lazy imports inside function bodies** — do
+the same for any new cross-domain calls. Full graph in `cogs/registry.py`.
 
 ### Context proxies
-
-`core/context.py` exposes `bot`, `tree`, and `abuse_system` as module-level
-proxies set during `setup_hook`. All cog files import from here instead of
-passing the bot instance around.
+`core/context.py` exposes `bot`, `tree`, `abuse_system` as module-level proxies
+set during `setup_hook`. Import from here instead of passing the bot around.
 
 ### Token resolution
+`resolve_bot_token()` checks `config.json:"token_env_var"` first, then falls
+back through `TOKEN_ENV_VARS` (`DISCORD_BOT_TOKEN`, `MBX_BOT_TOKEN`).
 
-`resolve_bot_token()` in `core/data.py` checks `config.json:"token_env_var"`
-first, then falls back through `TOKEN_ENV_VARS` (`DISCORD_BOT_TOKEN`,
-`MBX_BOT_TOKEN`).
-
----
-
-## Development workflow (autonomous PR loop)
-
-The owner of this repo (9mits) runs an **autonomous PR workflow**. When working
-on any change, Claude Code should:
-
-1. **Branch** off `main` (`fix/`, `feat/`, `chore/`, `refactor/` prefix).
-2. **Code + test** locally — run `python -m unittest discover -s tests` and
-   `python -m pyflakes core/ cogs/ tests/` before committing.
-3. **Push** the branch and open a PR via `gh pr create`.
-4. **Watch CI** (`gh pr checks <number>`) — fix any failures on the branch
-   before reporting back.
-5. **Stop and ask the user: "CI is green — ready to merge?"** Do NOT merge
-   automatically. Wait for the user to say "merge" (or similar).
-6. On merge confirmation: `gh pr merge <number> --squash --delete-branch`,
-   then `git checkout main && git pull`.
-7. **Deploy**: `python panel.py restart` — BisectHosting auto-pulls `main` on
-   restart, so this deploys the live bots (bot1 + bot2).
-
-`main` is protected by GitHub Ruleset 18121569 (active): PR required, both
-`test (3.11)` and `test (3.12)` CI checks must pass, no force-push/deletion.
-
-GitHub CLI is at `C:\Program Files\GitHub CLI\gh.exe`, authenticated as
-`9mits`. Use the full path or `& "C:\Program Files\GitHub CLI\gh.exe"` in
-PowerShell.
-
-### Environments
-
-| Stage | How to run | Purpose |
-|---|---|---|
-| **local** | `python -m unittest discover -s tests` | logic / regression tests |
-| **staging** | `python run_test.py` | runs test bot locally via `.env.test` |
-| **production** | `python panel.py restart` | live bots on BisectHosting panel |
-
-The staging bot (`.env.test`) runs **locally on the dev machine** — it is NOT
-on the BisectHosting panel. The panel runs only the two live tokens (`.env.bot1`
-/ `.env.bot2`) via `start.py`.
-
-### Hosting (BisectHosting / Pterodactyl)
-
-- One panel server, ID `19d7e6d1`, at `games.bisecthosting.com`.
-- The panel auto-pulls from the `main` branch of `github.com/9mits/custom-discord-bot`
-  and reinstalls pip packages every time the server starts.
-- There is no SSH/shell/systemd — everything is via the panel API or the web UI.
-- `panel.py` controls the server: `python panel.py {status|start|stop|restart}`.
-- Credentials live in git-ignored `.panel.env` (NEVER commit this file).
-- The server prints `successfully finished startup` via `on_ready` in
-  `core/bot.py` so the panel correctly detects the running state.
-
-### Key files (workflow-related)
-
-- `run_test.py` — local staging launcher, loads `.env.test` only.
-- `panel.py` — Pterodactyl client API wrapper; requires `.panel.env`.
-- `.panel.env` — git-ignored; holds `PANEL_URL`, `PANEL_SERVER_ID`, `PANEL_API_KEY`.
-- `WORKFLOW.md` — human-readable version of this workflow.
-- `.github/workflows/ci.yml` — matrix CI: py_compile + pyflakes + unittest on
-  Python 3.11 and 3.12.
-- `.github/PULL_REQUEST_TEMPLATE.md` — PR checklist template.
-
-### What NOT to do
-
-- Do not push directly to `main` — branch protection will reject it.
-- Do not merge a PR without the user's explicit "merge" confirmation.
-- Do not commit `.env.*`, `.panel.env`, `config.json`, or `database*/` — all
-  git-ignored and contain live secrets/data.
+### Dependencies
+```bash
+pip install -r requirements.txt   # discord.py>=2.6, aiohttp>=3.13, aiosqlite>=0.22, python-dotenv
+```
 
 ---
 
 ## Project conventions
 
-These reflect decisions made for this bot; honour them in new work.
+- **No decorative emoji in user-facing output.** Only exceptions: functional
+  reactions with no non-emoji equivalent — the public-execution vote `✅`
+  (`moderation.py` adds it, `events.py` counts it) and modmail relay markers
+  `✅`/`📨` (`events.py`). Internal comments/docstrings are exempt.
 
-- **No decorative emoji in user-facing output.** Messages, embeds, and exported
-  transcripts must not contain decorative emoji. The only emoji that may remain
-  are **functional reactions** that drive a feature and have no non-emoji
-  equivalent: the public-execution vote `✅` (`moderation.py` adds it,
-  `events.py` counts it) and the modmail relay status markers `✅`/`📨`
-  (`events.py`). Internal code comments/docstrings (e.g. the `→`/`↔` arrows in
-  `registry.py`) are not user-facing and are exempt.
+- **Embed footers are the brand name only** — no scope label, so they don't
+  wrap on narrow clients. Set via `make_embed`/`brand_embed` in `shared.py`.
 
-- **Embed footers are the brand name only** (no scope label appended), so they
-  don't overflow/wrap on narrow clients. Footer text is set in `make_embed`/
-  `brand_embed` in `shared.py`.
-
-- **Never expose a moderator's identity in user-facing moderation output.**
-  AutoMod report DMs and the report log must not include a "Responder" field or
-  otherwise reveal which staff member acted — it invades privacy and lets bad
-  actors target moderators.
+- **Never expose a moderator's identity in user-facing output.** AutoMod report
+  DMs and the report log must not include a "Responder" field or similar.
 
 - **Resolve targets to a full guild `Member` when acting on them.** The native
-  slash `user:` picker is client-side and can silently fail to select some real
-  members; prefer `resolve_member()` and the `UserSelect` pickers. `/punish`
-  exposes a `user_id:` fallback (accepts an ID or mention, resolved bot-side)
-  for members the native picker can't reach.
+  slash `user:` picker can silently fail to select some members. Use
+  `resolve_member()` and `UserSelect` pickers. `/punish` has a `user_id:`
+  fallback for members the native picker can't reach.
 
-- **Several panels use Components V2** (buttons + dropdowns) rather than plain
-  embeds; match the surrounding style when editing a given surface.
+- **Several panels use Components V2** (buttons + dropdowns) — match the
+  surrounding style when editing a given surface.
+
+- **Commit messages:** `type: short description` format. Types: `fix`, `feat`,
+  `chore`, `refactor`. Keep the subject line under 72 chars.
+
+---
+
+## What NOT to do
+
+- Do not push directly to `main` — branch protection will reject it.
+- Do not merge a PR without explicit "merge" from the user.
+- Do not commit `.env.*`, `.panel.env`, `config.json`, `database*/` — git-ignored, contain live secrets.
+- Do not add `git add -A` blindly — stage specific files and review what's included.
+- Do not add decorative emoji, trailing summaries, or verbose commentary to responses.
+- Do not add error handling for impossible cases or features the user didn't ask for.
+- Do not write comments that explain what the code does — only write them when the WHY is non-obvious.
