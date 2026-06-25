@@ -136,6 +136,73 @@ first, then falls back through `TOKEN_ENV_VARS` (`DISCORD_BOT_TOKEN`,
 
 ---
 
+## Development workflow (autonomous PR loop)
+
+The owner of this repo (9mits) runs an **autonomous PR workflow**. When working
+on any change, Claude Code should:
+
+1. **Branch** off `main` (`fix/`, `feat/`, `chore/`, `refactor/` prefix).
+2. **Code + test** locally — run `python -m unittest discover -s tests` and
+   `python -m pyflakes core/ cogs/ tests/` before committing.
+3. **Push** the branch and open a PR via `gh pr create`.
+4. **Watch CI** (`gh pr checks <number>`) — fix any failures on the branch
+   before reporting back.
+5. **Stop and ask the user: "CI is green — ready to merge?"** Do NOT merge
+   automatically. Wait for the user to say "merge" (or similar).
+6. On merge confirmation: `gh pr merge <number> --squash --delete-branch`,
+   then `git checkout main && git pull`.
+7. **Deploy**: `python panel.py restart` — BisectHosting auto-pulls `main` on
+   restart, so this deploys the live bots (bot1 + bot2).
+
+`main` is protected by GitHub Ruleset 18121569 (active): PR required, both
+`test (3.11)` and `test (3.12)` CI checks must pass, no force-push/deletion.
+
+GitHub CLI is at `C:\Program Files\GitHub CLI\gh.exe`, authenticated as
+`9mits`. Use the full path or `& "C:\Program Files\GitHub CLI\gh.exe"` in
+PowerShell.
+
+### Environments
+
+| Stage | How to run | Purpose |
+|---|---|---|
+| **local** | `python -m unittest discover -s tests` | logic / regression tests |
+| **staging** | `python run_test.py` | runs test bot locally via `.env.test` |
+| **production** | `python panel.py restart` | live bots on BisectHosting panel |
+
+The staging bot (`.env.test`) runs **locally on the dev machine** — it is NOT
+on the BisectHosting panel. The panel runs only the two live tokens (`.env.bot1`
+/ `.env.bot2`) via `start.py`.
+
+### Hosting (BisectHosting / Pterodactyl)
+
+- One panel server, ID `19d7e6d1`, at `games.bisecthosting.com`.
+- The panel auto-pulls from the `main` branch of `github.com/9mits/custom-discord-bot`
+  and reinstalls pip packages every time the server starts.
+- There is no SSH/shell/systemd — everything is via the panel API or the web UI.
+- `panel.py` controls the server: `python panel.py {status|start|stop|restart}`.
+- Credentials live in git-ignored `.panel.env` (NEVER commit this file).
+- The server prints `successfully finished startup` via `on_ready` in
+  `core/bot.py` so the panel correctly detects the running state.
+
+### Key files (workflow-related)
+
+- `run_test.py` — local staging launcher, loads `.env.test` only.
+- `panel.py` — Pterodactyl client API wrapper; requires `.panel.env`.
+- `.panel.env` — git-ignored; holds `PANEL_URL`, `PANEL_SERVER_ID`, `PANEL_API_KEY`.
+- `WORKFLOW.md` — human-readable version of this workflow.
+- `.github/workflows/ci.yml` — matrix CI: py_compile + pyflakes + unittest on
+  Python 3.11 and 3.12.
+- `.github/PULL_REQUEST_TEMPLATE.md` — PR checklist template.
+
+### What NOT to do
+
+- Do not push directly to `main` — branch protection will reject it.
+- Do not merge a PR without the user's explicit "merge" confirmation.
+- Do not commit `.env.*`, `.panel.env`, `config.json`, or `database*/` — all
+  git-ignored and contain live secrets/data.
+
+---
+
 ## Project conventions
 
 These reflect decisions made for this bot; honour them in new work.
