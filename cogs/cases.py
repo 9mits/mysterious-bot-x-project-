@@ -687,7 +687,7 @@ def build_active_punishments_embed(guild: discord.Guild, active_list: List[tuple
         )
 
     if len(active_list) > display_limit:
-        embed.set_footer(text=f"{BRAND_NAME} • {SCOPE_MODERATION} • Showing {display_limit} of {len(active_list)} active cases")
+        embed.set_footer(text=f"{BRAND_NAME} • Showing {display_limit} of {len(active_list)} active cases")
     return embed
 
 

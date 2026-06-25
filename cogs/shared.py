@@ -810,7 +810,7 @@ def make_embed(
         color=EMBED_PALETTE.get(kind, EMBED_PALETTE["neutral"]),
     )
     embed.timestamp = discord.utils.utcnow()
-    footer_text = f"{BRAND_NAME} • {scope}"
+    footer_text = BRAND_NAME
     if guild and guild.icon:
         embed.set_footer(text=footer_text, icon_url=guild.icon.url)
     else:
@@ -829,7 +829,7 @@ def brand_embed(
     scope: str = SCOPE_SYSTEM,
 ) -> discord.Embed:
     embed.timestamp = discord.utils.utcnow()
-    footer_text = f"{BRAND_NAME} • {scope}"
+    footer_text = BRAND_NAME
     if guild and guild.icon:
         embed.set_footer(text=footer_text, icon_url=guild.icon.url)
     else:

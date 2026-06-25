@@ -1888,8 +1888,10 @@ async def apply_automod_report_response(
         guild=guild,
         thumbnail=guild.icon.url if guild and guild.icon else None,
     )
-    dm_embed.add_field(name="Reason", value=format_reason_value(rule_name, limit=300), inline=False)
-    dm_embed.add_field(name="Responder", value=format_user_ref(interaction.user), inline=False)
+    dm_embed.add_field(name="Regarding", value=f"Your reported AutoMod warning for **{truncate_text(rule_name, 200)}**", inline=False)
+    if warning_id:
+        dm_embed.add_field(name="Warning ID", value=f"`{warning_id}`", inline=True)
+    dm_embed.add_field(name="Outcome", value=preset.get("status", "Staff Replied"), inline=True)
 
     try:
         await target_user.send(embed=dm_embed)
@@ -1915,7 +1917,6 @@ async def apply_automod_report_response(
         updated_embed = discord.Embed.from_dict(report_message.embeds[0].to_dict())
         updated_embed.color = EMBED_PALETTE.get(preset.get("kind", "info"), EMBED_PALETTE["info"])
         upsert_embed_field(updated_embed, "Report Status", preset.get("status", "Staff Replied"), inline=True)
-        upsert_embed_field(updated_embed, "Responder", format_user_ref(interaction.user), inline=True)
         upsert_embed_field(updated_embed, "Responded", discord.utils.format_dt(discord.utils.utcnow(), "F"), inline=True)
         upsert_embed_field(updated_embed, "Staff Response", format_log_quote(response_text, limit=800), inline=False)
         brand_embed(updated_embed, guild=guild, scope=SCOPE_MODERATION)
