@@ -1,11 +1,13 @@
 """MGXBot class, background tasks, extension loading, and bot lifecycle."""
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import os
 import time
 from datetime import timedelta
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import aiohttp
 import discord
@@ -13,7 +15,7 @@ from discord.ext import commands, tasks
 
 logger = logging.getLogger("MGXBot")
 
-from core.constants import DEFAULT_GUILD_ID, SCOPE_ROLES, SCOPE_SUPPORT
+from core.constants import DEFAULT_GUILD_ID, SCOPE_ROLES, SCOPE_SUPPORT, TEST_GUILD_ID
 from core.context import set_bot
 from core.data import DataManager, resolve_bot_token
 from core.services import get_feature_flag, ticket_needs_sla_alert
@@ -69,6 +71,25 @@ def _build_intents() -> discord.Intents:
     return intents
 
 
+def command_payloads(tree: discord.app_commands.CommandTree) -> List[dict]:
+    """Serialise the current global command tree to plain dicts for hashing."""
+    payloads = []
+    for command in tree.get_commands():
+        try:
+            payloads.append(command.to_dict(tree))
+        except Exception:
+            # Fall back to a coarse identity if a command can't be serialised, so
+            # a change there still nudges the fingerprint rather than crashing.
+            payloads.append({"name": getattr(command, "qualified_name", repr(command))})
+    return payloads
+
+
+def fingerprint_payloads(payloads: List[dict]) -> str:
+    """Order-independent SHA-256 of serialised commands; same set → same hash."""
+    encoded = sorted(json.dumps(p, sort_keys=True, default=str) for p in payloads)
+    return hashlib.sha256("\n".join(encoded).encode("utf-8")).hexdigest()
+
+
 class MGXBot(commands.Bot):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -96,6 +117,7 @@ class MGXBot(commands.Bot):
             logger.info("TEST_MODE active — testkit cog loaded")
 
         self._remove_disabled_application_commands()
+        await self._auto_sync_commands()
         await self._restore_persistent_views()
 
         self.check_tempbans.start()
@@ -125,6 +147,45 @@ class MGXBot(commands.Bot):
                 discord.AppCommandType.message,
             ):
                 self.tree.remove_command(command_name, type=command_type)
+
+    async def _auto_sync_commands(self) -> None:
+        """Sync slash commands to this instance's guild on startup.
+
+        Targets ``TEST_GUILD_ID`` under TEST_MODE (so staging registers privately)
+        and the configured guild in production — each single-guild instance keeps
+        its own guild current on deploy, with no manual ``!sync``. A fingerprint of
+        the command set is stored in config so unchanged restarts skip the API call
+        and don't burn Discord's command-sync rate limit. ``!sync`` stays as a
+        manual override. A sync failure here must never block startup.
+        """
+        if not self.data_manager:
+            return
+
+        if os.environ.get("TEST_MODE"):
+            target_id = TEST_GUILD_ID
+        else:
+            target_id = self.data_manager.config.get("guild_id", DEFAULT_GUILD_ID)
+        if not target_id:
+            return
+
+        fingerprint = fingerprint_payloads(command_payloads(self.tree))
+        state_key = f"synced_command_fingerprint_{target_id}"
+        if self.data_manager.config.get(state_key) == fingerprint:
+            logger.info("Slash commands unchanged for guild %s — skipping sync", target_id)
+            return
+
+        guild = discord.Object(id=int(target_id))
+        try:
+            self.tree.copy_global_to(guild=guild)
+            synced = await self.tree.sync(guild=guild)
+        except discord.HTTPException as exc:
+            logger.warning("Auto-sync to guild %s failed: %s", target_id, exc)
+            return
+
+        self.data_manager.config[state_key] = fingerprint
+        self.data_manager.mark_config_dirty()
+        await self.data_manager.save_all()
+        logger.info("Auto-synced %d slash commands to guild %s", len(synced), target_id)
 
     async def close(self) -> None:
         for task_loop in (

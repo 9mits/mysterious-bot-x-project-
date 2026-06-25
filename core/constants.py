@@ -18,6 +18,11 @@ TOKEN_ENV_VARS = ("DISCORD_BOT_TOKEN", "MBX_BOT_TOKEN")
 # Guild / Discord IDs  (fallbacks used before config.json is loaded)
 # ---------------------------------------------------------------------------
 DEFAULT_GUILD_ID = 1351136089259114516
+
+# When TEST_MODE=1, commands auto-sync here instead of the configured guild, so a
+# staging bot can register slash commands privately without leaking into a live
+# server. Overridable via the TEST_GUILD_ID env var.
+TEST_GUILD_ID = int(os.environ.get("TEST_GUILD_ID", "1517926650853986385"))
 DEFAULT_ANCHOR_ROLE_ID = 1433987521133674597  # custom roles are positioned under this role
 
 DEFAULT_ROLE_OWNER = 1351544048934191185
