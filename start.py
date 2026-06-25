@@ -19,8 +19,8 @@ def load_env(path: str) -> dict:
 processes = []
 
 for base in ("bot1", "bot2", "test"):
-    path = next((p for p in (Path(f".env.{base}"), Path(f"env.{base}")) if p.exists()), None)
-    if path:
+    path = Path(f".env.{base}")
+    if path.exists():
         processes.append(subprocess.Popen([sys.executable, "main.py"], env=load_env(str(path))))
 
 if not processes:

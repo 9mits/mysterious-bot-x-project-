@@ -11,7 +11,7 @@ DISCORD_BOT_TOKEN=your_token python3 main.py
 # Or place the token in a .env file — read via python-dotenv if present.
 
 # Multiple bots at once — start.py launches one process per env file it finds
-# (.env.bot1 / env.bot1, .env.bot2 / env.bot2, .env.test / env.test):
+# (.env.bot1, .env.bot2, .env.test):
 python3 start.py
 ```
 
@@ -64,7 +64,7 @@ restores persistent views, and loads the cog extensions in `EXTENSIONS`
 
 ```
 main.py             — Entry point: from core.bot import run
-start.py            — Multi-bot launcher: one process per env.bot* file
+start.py            — Multi-bot launcher: one process per .env.bot* file
 core/               — Internal framework (no discord UI code)
   bot.py            — MGXBot class, intents, background tasks, EXTENSIONS tuple, lifecycle
   data.py           — DataManager (all persistence), AntiAbuseSystem, resolve_bot_token

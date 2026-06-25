@@ -5,8 +5,6 @@ __pycache__/
 .env.bot1
 .env.bot2
 .env.test
-env.bot1
-env.bot2
 event_data/
 config.json
 database/
