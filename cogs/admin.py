@@ -836,20 +836,37 @@ async def lift_lockdown(interaction: discord.Interaction):
     
     await interaction.followup.send(embed=make_embed("Lockdown Lifted", f"> Restored visibility for {restored_count} channels.", kind="success", scope=SCOPE_SYSTEM, guild=interaction.guild), ephemeral=True)
 
+# Sync notices are operational chatter, not a record — auto-expire them so a
+# repeated !sync doesn't clutter the channel.
+SYNC_NOTICE_DELETE_AFTER = 15
+
+
 @commands.command(name="sync")
 async def sync(ctx):
+    # Remove the invoking "!sync" message too so the whole exchange clears out.
+    try:
+        await ctx.message.delete()
+    except (discord.Forbidden, discord.HTTPException):
+        pass
+
     # Check for Owner Role, Server Owner, or Administrator
     owner_role = bot.data_manager.config.get("role_owner", DEFAULT_ROLE_OWNER)
     is_owner = ctx.author.id == ctx.guild.owner_id
     has_role = any(r.id == owner_role for r in ctx.author.roles)
     is_admin = ctx.author.guild_permissions.administrator
-    
+
     if not (is_owner or has_role or is_admin):
-        await ctx.send("Access Denied: You need the Owner role, Server Owner status, or Administrator permission.")
+        await ctx.send(
+            "Access Denied: You need the Owner role, Server Owner status, or Administrator permission.",
+            delete_after=SYNC_NOTICE_DELETE_AFTER,
+        )
         return
-    
+
     guild = ctx.guild
-    await ctx.send(f"Cleaning and syncing commands for **{guild.name}**...")
+    await ctx.send(
+        f"Cleaning and syncing commands for **{guild.name}**...",
+        delete_after=SYNC_NOTICE_DELETE_AFTER,
+    )
     bot._remove_disabled_application_commands()
 
     bot.tree.clear_commands(guild=guild)
@@ -859,7 +876,10 @@ async def sync(ctx):
     bot.tree.copy_global_to(guild=guild)
     guild_cmds = await bot.tree.sync(guild=guild)
     global_text = f" Removed {len(global_deleted)} stale global command(s)." if global_deleted else ""
-    await ctx.send(f"Synced {len(guild_cmds)} server commands.{global_text}")
+    await ctx.send(
+        f"Synced {len(guild_cmds)} server commands.{global_text}",
+        delete_after=SYNC_NOTICE_DELETE_AFTER,
+    )
     logger.info(
         "Synced guild commands: %s | removed global commands: %s",
         [c.name for c in guild_cmds],

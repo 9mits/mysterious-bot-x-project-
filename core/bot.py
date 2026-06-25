@@ -103,6 +103,7 @@ class MGXBot(commands.Bot):
         self.status_task.start()
         self.modmail_sla_task.start()
         self.role_cleanup_task.start()
+        self.project_stats_task.start()
 
     async def _restore_persistent_views(self) -> None:
         from cogs.modmail import ModmailControlView, ModmailPanelView
@@ -133,6 +134,7 @@ class MGXBot(commands.Bot):
             self.status_task,
             self.modmail_sla_task,
             self.role_cleanup_task,
+            self.project_stats_task,
         ):
             task_loop.cancel()
 
@@ -179,6 +181,13 @@ class MGXBot(commands.Bot):
         await self.change_presence(
             activity=discord.Activity(type=discord.ActivityType.listening, name="DMs for support")
         )
+
+    @tasks.loop(minutes=5)
+    async def project_stats_task(self) -> None:
+        # Publish this instance's stats so /about can aggregate the whole fleet.
+        from core.project_stats import write_snapshot
+
+        await write_snapshot(self)
 
     @tasks.loop(minutes=10)
     async def modmail_sla_task(self) -> None:
@@ -301,6 +310,10 @@ class MGXBot(commands.Bot):
 
     @status_task.before_loop
     async def before_status_task(self) -> None:
+        await self.wait_until_ready()
+
+    @project_stats_task.before_loop
+    async def before_project_stats_task(self) -> None:
         await self.wait_until_ready()
 
     @modmail_sla_task.before_loop

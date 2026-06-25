@@ -111,6 +111,7 @@ core/      framework, no Discord UI code
   context.py    proxy singletons: bot, tree, abuse_system
   models.py     dataclasses: CaseMetadata, EscalationStep, ValidationFinding, CaseNote
   utils.py      stateless helpers: parse_duration_str, format_duration, truncate_text
+  project_stats.py  cross-instance fleet snapshots powering /about (shared folder)
 cogs/      one discord.py extension per domain
   shared.py            embed builders, log senders, permission checks (no Cog class)
   cases.py / history.py / case_panel.py   case mgmt, history UI, transcript export
@@ -151,6 +152,12 @@ Read the relevant file when you touch an area; these are the non-obvious points.
   rather than threading the bot instance through call signatures.
 - **Tokens:** `resolve_bot_token()` checks `config.json:"token_env_var"`, then
   falls back through `TOKEN_ENV_VARS` (`DISCORD_BOT_TOKEN`, `MBX_BOT_TOKEN`).
+- **Fleet stats (`/about`):** each instance is single-guild with its own DB, so no
+  process can read a sibling's *live* numbers (member_count lives in the gateway
+  cache). `core/project_stats.py` bridges this by having every instance write a
+  JSON snapshot of its own stats into a shared `project_stats/` folder (one file
+  per bot user id, refreshed by `project_stats_task` every 5 min); `/about` sums
+  all snapshots. `project_stats.py` imports only stdlib + discord — never `cogs/`.
 - **Deps:** `pip install -r requirements.txt` (discord.py>=2.6, aiohttp>=3.13,
   aiosqlite>=0.22, python-dotenv).
 
