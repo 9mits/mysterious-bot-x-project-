@@ -14,6 +14,7 @@ config.json
 database/
 database-bot1/
 database-bot2/
+project_stats/
 
 # AI agent local overrides (personal, not shared)
 CLAUDE.local.md

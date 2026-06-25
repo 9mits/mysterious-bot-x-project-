@@ -8,12 +8,19 @@ from typing import Optional
 from collections import Counter
 
 from core.constants import (
+    BRAND_NAME,
     DEFAULT_ROLE_ADMIN,
     DEFAULT_ROLE_COMMUNITY_MANAGER,
     DEFAULT_ROLE_OWNER,
     SCOPE_ANALYTICS,
 )
 from core.context import bot, tree
+from core.project_stats import (
+    aggregate_snapshots,
+    is_stale,
+    read_all_snapshots,
+    write_snapshot,
+)
 from core.utils import iso_to_dt, create_progress_bar
 from .shared import (
     truncate_text,
@@ -446,6 +453,77 @@ async def directory(interaction: discord.Interaction):
     await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
 
+MAX_SERVER_LINES = 15
+
+
+@tree.command(name="about", description=f"View project-wide stats across every server {BRAND_NAME} runs.")
+async def about(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+
+    # Refresh this instance's own snapshot first so its line is current.
+    await write_snapshot(bot)
+    summary = aggregate_snapshots(read_all_snapshots())
+
+    if summary["server_count"] == 0:
+        embed = make_embed(
+            f"About {BRAND_NAME}",
+            "> Project stats are still warming up. Try again in a minute.",
+            kind="info",
+            scope=SCOPE_ANALYTICS,
+            guild=interaction.guild,
+        )
+        await interaction.followup.send(embed=embed, ephemeral=True)
+        return
+
+    totals = summary["totals"]
+    embed = make_embed(
+        f"About {BRAND_NAME}",
+        f"> Combined reach and moderation activity across every server {BRAND_NAME} protects.",
+        kind="analytics",
+        scope=SCOPE_ANALYTICS,
+        guild=interaction.guild,
+    )
+
+    embed.add_field(
+        name="Network Overview",
+        value=(
+            f">>> Servers: **{summary['server_count']:,}**\n"
+            f"Total Members: **{summary['total_members']:,}**\n"
+            f"Moderation Actions: **{totals['total_cases']:,}**"
+        ),
+        inline=True,
+    )
+    embed.add_field(
+        name="Action Breakdown",
+        value=(
+            f">>> Bans: **{totals['bans']:,}**\n"
+            f"Timeouts: **{totals['timeouts']:,}**\n"
+            f"Warnings: **{totals['warns']:,}**"
+        ),
+        inline=True,
+    )
+
+    server_lines = []
+    for snap in summary["servers"][:MAX_SERVER_LINES]:
+        name = truncate_text(snap.get("guild_name", "Unknown Server"), 60)
+        members = int(snap.get("member_count", 0) or 0)
+        actions = int((snap.get("stats", {}) or {}).get("total_cases", 0) or 0)
+        line = f"**{name}** — {members:,} members · {actions:,} actions"
+        if is_stale(snap):
+            updated = iso_to_dt(snap.get("updated_at"))
+            seen = discord.utils.format_dt(updated, "R") if updated else "a while ago"
+            line += f" · last seen {seen}"
+        server_lines.append(line)
+
+    remaining = summary["server_count"] - len(server_lines)
+    if remaining > 0:
+        server_lines.append(f"...and **{remaining}** more server{'s' if remaining != 1 else ''}")
+
+    embed.add_field(name="Servers", value=">>> " + "\n".join(server_lines), inline=False)
+
+    await interaction.followup.send(embed=embed, ephemeral=True)
+
+
 class AnalyticsCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -455,3 +533,4 @@ async def setup(bot):
     await bot.add_cog(AnalyticsCog(bot))
     bot.tree.add_command(stats)
     bot.tree.add_command(directory)
+    bot.tree.add_command(about)
