@@ -2041,7 +2041,7 @@ class AutoModReportModal(discord.ui.Modal, title="Report AutoMod Warning"):
         placeholder="Context, screenshots, or what you were trying to say.",
     )
 
-    def __init__(self, *, guild_id: int, warning_id: str, rule_id: int, rule_name: str, content: str, matched_keyword: Optional[str]):
+    def __init__(self, *, guild_id: int, warning_id: str, rule_id: int, rule_name: str, content: str, matched_keyword: Optional[str], source_message: Optional[discord.Message] = None):
         super().__init__()
         self.guild_id = guild_id
         self.warning_id = warning_id
@@ -2049,6 +2049,7 @@ class AutoModReportModal(discord.ui.Modal, title="Report AutoMod Warning"):
         self.rule_name = rule_name
         self.content = content
         self.matched_keyword = matched_keyword
+        self.source_message = source_message
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         guild = bot.get_guild(self.guild_id) or get_primary_guild()
@@ -2095,6 +2096,21 @@ class AutoModReportModal(discord.ui.Modal, title="Report AutoMod Warning"):
                 rule_name=self.rule_name,
             ),
         )
+
+        if self.source_message is not None:
+            try:
+                if self.source_message.embeds:
+                    updated_embed = discord.Embed.from_dict(self.source_message.embeds[0].to_dict())
+                else:
+                    updated_embed = discord.Embed()
+                updated_embed.color = EMBED_PALETTE.get("success", EMBED_PALETTE["info"])
+                upsert_embed_field(updated_embed, "Report Status", "✅ Reported to staff — under review", inline=False)
+                reported_view = discord.ui.View(timeout=None)
+                reported_view.add_item(discord.ui.Button(label="Reported", style=discord.ButtonStyle.success, disabled=True))
+                await self.source_message.edit(embed=updated_embed, view=reported_view)
+            except Exception:
+                pass
+
         await interaction.response.send_message(
             embed=make_confirmation_embed(
                 "Report Sent",
@@ -2126,6 +2142,7 @@ class AutoModWarningView(discord.ui.View):
                 rule_name=self.rule_name,
                 content=self.content,
                 matched_keyword=self.matched_keyword,
+                source_message=interaction.message,
             )
         )
 
