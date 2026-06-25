@@ -95,15 +95,19 @@ Merge the PR on GitHub. `main` now contains the change, proven to pass CI.
 
 ### 7. Deploy to production
 
-On the production host, run the deploy script:
+The live bots run on the BisectHosting panel, which **auto-pulls from `main` on
+restart**. So deploying = restarting the server, which you can do from here:
 
 ```bash
-./deploy.sh        # Windows: run from Git Bash
+python panel.py restart    # panel pulls latest main, bot1 + bot2 restart on it
 ```
 
-It refuses to run unless you're on a clean `main`, pulls the latest code, runs
-the unit tests as a final gate, and only then launches the bots. Production is
-now running a known-good commit. Done.
+Check it came back up with `python panel.py status` (expect `running`).
+Production is now running the merged, CI-passed commit. Done.
+
+> The **test bot** is not on the panel — it runs locally via `run_test.py` for
+> staging (see the staging note in step 3), so production only ever runs the two
+> live tokens.
 
 ---
 
