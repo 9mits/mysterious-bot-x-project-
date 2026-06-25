@@ -1,0 +1,28 @@
+# pyproject.toml — project metadata + tool configuration.
+#
+# This is intentionally NOT a packaging manifest: the bot is a deployed service,
+# run with `python main.py`, never `pip install`-ed. There is no [build-system]
+# and runtime dependencies stay pinned in requirements.txt. This file exists to
+# give tools (ruff, etc.) a single, standard config home.
+
+[project]
+name = "custom-discord-bot"
+version = "0.1.0"
+description = "Multi-instance Discord moderation bot (discord.py 2.x, SQLite)"
+requires-python = ">=3.11"
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+# Runtime data and migration artifacts are never source.
+extend-exclude = ["database", "database-bot1", "database-bot2", "event_data", ".venv"]
+
+[tool.ruff.lint]
+# Adopted incrementally and not yet enforced in CI. Run `ruff check core/ cogs/ tests/`
+# locally; tighten this set and wire it into CI once the existing findings are
+# worked through. E501/E701/E402 are relaxed for now to match the current style.
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["E501", "E701", "E402"]
+
+[tool.ruff.format]
+quote-style = "double"

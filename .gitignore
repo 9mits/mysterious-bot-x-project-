@@ -14,3 +14,7 @@ config.json
 database/
 database-bot1/
 database-bot2/
+
+# AI agent local overrides (personal, not shared)
+CLAUDE.local.md
+.claude/settings.local.json

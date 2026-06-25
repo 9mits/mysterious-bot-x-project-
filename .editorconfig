@@ -1,0 +1,24 @@
+# EditorConfig — https://editorconfig.org
+# Keeps whitespace/charset/line-endings consistent across editors and AI agents,
+# so style rules stay out of the instruction files.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+[*.py]
+max_line_length = 120
+
+[*.{yml,yaml,json,toml,md}]
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false
+
+[*.sh]
+end_of_line = lf
