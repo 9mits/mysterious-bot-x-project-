@@ -8,6 +8,7 @@ venv/
 .env.bot1
 .env.bot2
 .env.test
+.panel.env
 event_data/
 config.json
 database/
