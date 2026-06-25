@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+.DS_Store
+.env
+.env.bot1
+.env.bot2
+.env.test
+env.bot1
+env.bot2
+event_data/
+config.json
+database/
+database-bot1/
+database-bot2/
+.claude/

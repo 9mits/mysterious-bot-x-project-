@@ -18,9 +18,10 @@ def load_env(path: str) -> dict:
 
 processes = []
 
-for env_file in (".env.bot1", ".env.bot2", ".env.test"):
-    if Path(env_file).exists():
-        processes.append(subprocess.Popen([sys.executable, "main.py"], env=load_env(env_file)))
+for base in ("bot1", "bot2", "test"):
+    path = next((p for p in (Path(f".env.{base}"), Path(f"env.{base}")) if p.exists()), None)
+    if path:
+        processes.append(subprocess.Popen([sys.executable, "main.py"], env=load_env(str(path))))
 
 if not processes:
     print("No .env.bot1, .env.bot2, or .env.test files found — nothing to launch.")

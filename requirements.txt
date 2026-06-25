@@ -1,4 +1,4 @@
-discord.py>=2.6.0
-aiohttp>=3.13.0
-aiosqlite>=0.22.0
-python-dotenv>=1.0.0
+discord.py~=2.6
+aiohttp~=3.13
+aiosqlite~=0.22
+python-dotenv~=1.0
