@@ -9,8 +9,14 @@ venv/
 .env.bot2
 .env.test
 .panel.env
-event_data/
 config.json
+
+# Local runtime data (databases, event state, cross-instance snapshots).
+# Paths are env-driven (BOT_DATA_DIR / PROJECT_STATS_DIR / EVENT_DATA_DIR);
+# local env files point these under runtime/. Legacy root paths kept ignored
+# so a default-path run never accidentally commits data.
+runtime/
+event_data/
 database/
 database-bot1/
 database-bot2/

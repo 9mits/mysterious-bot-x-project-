@@ -14,8 +14,9 @@ Cross-instance design (see cogs/registry.py for the broader picture):
 Exactly ONE instance should have EVENT_DISPLAY=1 or voice time is double-counted.
 The two JSON files have a single writer each, so the instances never race.
 
-State files live at <project root>/event_data/ which is shared across all
-instances (they all run from the same checkout), independent of BOT_DATA_DIR.
+State files live at <project root>/event_data/ (override with EVENT_DATA_DIR),
+shared across all instances (they all run from the same checkout), independent
+of BOT_DATA_DIR.
 """
 from __future__ import annotations
 
@@ -45,7 +46,7 @@ DEFAULT_TITLE = "1,000 Hour Voice Chat Event Leaderboard"
 # ---------------------------------------------------------------------------
 # Shared state files (single writer each)
 # ---------------------------------------------------------------------------
-EVENT_DIR = Path(__file__).resolve().parent.parent / "event_data"
+EVENT_DIR = Path(os.environ.get("EVENT_DATA_DIR", str(Path(__file__).resolve().parent.parent / "event_data")))
 CONFIG_FILE = EVENT_DIR / "event_config.json"     # writer: control (test bot)
 RUNTIME_FILE = EVENT_DIR / "event_runtime.json"   # writer: display (bot2)
 
