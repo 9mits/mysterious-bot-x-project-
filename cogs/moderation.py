@@ -771,12 +771,13 @@ class ModerationTargetSelect(discord.ui.UserSelect):
 
 
 class ModerationTargetPickerView(discord.ui.View):
-    def __init__(self, *, requester_id: int, action: str, public: bool = False, initial_undo_reason: Optional[str] = None):
+    def __init__(self, *, requester_id: int, action: str, public: bool = False, initial_undo_reason: Optional[str] = None, reaction_count: Optional[int] = None):
         super().__init__(timeout=180)
         self.requester_id = requester_id
         self.action = action
         self.public = public
         self.initial_undo_reason = initial_undo_reason
+        self.reaction_count = reaction_count
         self.add_item(ModerationTargetSelect(self))
         if action == "case":
             self.add_item(CaseIdButton())
@@ -793,7 +794,7 @@ class ModerationTargetPickerView(discord.ui.View):
             return
 
         if self.action == "punish":
-            await show_punish_menu(interaction, selected_user, public=self.public)
+            await show_punish_menu(interaction, selected_user, public=self.public, reaction_count=self.reaction_count)
             return
 
         member = await _resolve_selected_member(interaction, selected_user)
@@ -827,6 +828,7 @@ async def send_target_picker(
     description: str,
     public: bool = False,
     initial_undo_reason: Optional[str] = None,
+    reaction_count: Optional[int] = None,
 ) -> None:
     embed = make_embed(
         title,
@@ -842,6 +844,7 @@ async def send_target_picker(
             action=action,
             public=public,
             initial_undo_reason=initial_undo_reason,
+            reaction_count=reaction_count,
         ),
         ephemeral=True,
     )
@@ -882,6 +885,46 @@ async def punish(interaction: discord.Interaction, user: Optional[discord.User] 
         if member is not None:
             user = member
     await show_punish_menu(interaction, user, public=public)
+
+
+@tree.command(name="publicexecution", description="Put a member up for a community-vote punishment.")
+@app_commands.describe(
+    user="The member to put up for execution.",
+    reactions="How many reactions trigger the punishment (includes the bot's own). Default 5.",
+    user_id="A user ID or mention — use this if a member can't be found in the user: picker.",
+)
+@app_commands.check(_staff_check)
+async def publicexecution(
+    interaction: discord.Interaction,
+    user: Optional[discord.User] = None,
+    reactions: app_commands.Range[int, 2, 100] = 5,
+    user_id: Optional[str] = None,
+):
+    # Same target-selection flow as /punish, but the chosen punishment is held
+    # until `reactions` ✅ reactions land on a public embed (see PunishDetailsModal
+    # / CustomPunishDetailsModal, counted in cogs/events.py:on_raw_reaction_add).
+    if user is None and user_id:
+        target = await _resolve_user_id_input(interaction, user_id)
+        if target is None:
+            return
+        await show_punish_menu(interaction, target, reaction_count=reactions)
+        return
+
+    if user is None:
+        await send_target_picker(
+            interaction,
+            action="punish",
+            title="Choose a Target",
+            description=f"> Select a member to put up for a public execution (**{reactions}** reactions to trigger).",
+            reaction_count=reactions,
+        )
+        return
+
+    if not isinstance(user, discord.Member) and interaction.guild is not None:
+        member = await resolve_member(interaction.guild, user.id)
+        if member is not None:
+            user = member
+    await show_punish_menu(interaction, user, reaction_count=reactions)
 
 
 @tree.command(name="history", description="View a user's moderation history.")
@@ -1138,6 +1181,7 @@ class ModerationCog(commands.Cog):
 async def setup(bot):
     await bot.add_cog(ModerationCog(bot))
     bot.tree.add_command(punish)
+    bot.tree.add_command(publicexecution)
     bot.tree.add_command(history)
     bot.tree.add_command(active)
     bot.tree.add_command(undo)
