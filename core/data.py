@@ -718,6 +718,17 @@ class DataManager:
             reverse=True,
         )
 
+    def get_all_cases(self) -> List[Tuple[str, dict]]:
+        """Every case on record across all users as (user_id, record) pairs,
+        sorted by case id descending (newest first)."""
+        cases: List[Tuple[str, dict]] = []
+        for user_id, records in self.punishments.items():
+            for record in records:
+                if isinstance(record, dict):
+                    cases.append((user_id, record))
+        cases.sort(key=lambda item: item[1].get("case_id", 0), reverse=True)
+        return cases
+
     def allocate_case_id(self) -> int:
         current = self._normalize_positive_int(self.config.get("case_counter", 0), 0, minimum=0)
         next_case_id = current + 1

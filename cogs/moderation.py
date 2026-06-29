@@ -4,7 +4,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 import asyncio
-from datetime import datetime, timezone, timedelta
+from datetime import timedelta
 from typing import Optional, List, Union
 
 from core.constants import (
@@ -15,7 +15,7 @@ from core.services import (
     get_feature_flag,
 )
 from core.context import abuse_system, bot, tree
-from core.utils import iso_to_dt, now_iso, parse_duration_str
+from core.utils import now_iso, parse_duration_str
 from .shared import (
     format_duration,
     format_log_quote,
@@ -37,11 +37,10 @@ from .cases import (
     get_case_label,
     build_punishment_execution_log_embed,
     build_no_history_embed,
-    build_active_punishments_embed,
     build_mod_help_embed,
 )
 from .history import HistoryView
-from .case_panel import CasePanelView, FirstConfirmClear, ActiveView, generate_transcript_html
+from .case_panel import CasePanelView, FirstConfirmClear, AllCasesView, generate_transcript_html
 from .roles import AppealView, build_punish_embed
 
 # ----------------- Message capture / purge helpers -----------------
@@ -1117,39 +1116,24 @@ async def history(interaction: discord.Interaction, user: Optional[discord.Membe
     await show_history_menu(interaction, user)
 
 
-@tree.command(name="active", description="View active bans and timeouts.")
+@tree.command(name="cases", description="Browse every moderation case on the server in case order.")
 @app_commands.check(_staff_check)
-async def active(interaction: discord.Interaction):
+async def cases(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
-    now = discord.utils.utcnow()
-    active_list = []
-    for uid, records in bot.data_manager.punishments.items():
-        for i, rec in enumerate(records):
-            dur = rec.get("duration_minutes", 0)
-            p_type = rec.get("type", "timeout")
-            if p_type == "ban" and not rec.get("active", True):
-                continue
-            if dur == 0: continue
-            ts_str = rec.get("timestamp")
-            ts = iso_to_dt(ts_str)
-            if not ts: continue
-
-            if dur == -1:
-                expiry = datetime.max.replace(tzinfo=timezone.utc)
-            elif dur > 0:
-                expiry = ts + timedelta(minutes=dur)
-
-            if dur == -1 or expiry > now:
-                member = interaction.guild.get_member(int(uid))
-                name = member.display_name if member else uid
-                active_list.append((uid, rec, expiry, i+1, name))
-    if not active_list:
-        await interaction.followup.send(embed=make_embed("No Active Punishments", "> No active punishments found.", kind="info", scope=SCOPE_MODERATION, guild=interaction.guild), ephemeral=True)
+    view = AllCasesView(interaction.guild)
+    if not view.cases:
+        await interaction.followup.send(
+            embed=make_empty_state_embed(
+                "No Cases",
+                "> No moderation cases have been recorded yet.",
+                scope=SCOPE_MODERATION,
+                guild=interaction.guild,
+            ),
+            ephemeral=True,
+        )
         return
-    active_list.sort(key=lambda x: x[2])
-    embed = build_active_punishments_embed(interaction.guild, active_list, now)
-    view = ActiveView(active_list)
-    await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+    message = await interaction.followup.send(embed=view.build_embed(), view=view, ephemeral=True, wait=True)
+    view.message = message
 
 
 @tree.command(name="undo", description="Reverse a logged moderation action.")
@@ -1353,7 +1337,7 @@ async def setup(bot):
     bot.tree.add_command(punish)
     bot.tree.add_command(publicexecution)
     bot.tree.add_command(history)
-    bot.tree.add_command(active)
+    bot.tree.add_command(cases)
     bot.tree.add_command(undo)
     bot.tree.add_command(purge)
     bot.tree.add_command(lock)

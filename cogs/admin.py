@@ -590,7 +590,7 @@ async def internals(interaction: discord.Interaction):
     embed.add_field(name="Current Role Configuration", value=f">>> {roles_info}", inline=False)
     
     mod_commands = [
-        "/punish", "/history", "/active", "/undo",
+        "/punish", "/history", "/cases", "/undo",
         "/lock", "/unlock", "/purge"
     ]
     mod_cmds_fmt = "\n".join(mod_commands)

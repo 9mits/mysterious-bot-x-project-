@@ -10,7 +10,6 @@ from collections import Counter
 import re
 
 from core.constants import (
-    BRAND_NAME,
     FEATURE_FLAG_LABELS,
     SCOPE_MODERATION,
 )
@@ -654,40 +653,47 @@ def build_case_detail_embed(
     return embed
 
 
-def build_active_punishments_embed(guild: discord.Guild, active_list: List[tuple], now: datetime) -> discord.Embed:
-    display_limit = 22
+def build_all_cases_embed(
+    guild: discord.Guild,
+    page_items: List[Tuple[str, dict]],
+    *,
+    page: int,
+    max_pages: int,
+    total: int,
+    counts: Dict[str, int],
+) -> discord.Embed:
+    """Server-wide case browser: every case (bans, timeouts, warns, kicks,
+    softbans) in case order, paginated."""
     embed = make_embed(
-        "Active Punishments",
-        "> Timeouts and bans that are still in effect are listed below. Select one for full case details.",
-        kind="danger",
+        "Server Cases",
+        "> Every moderation case on record, newest first. Select one below to open its full panel.",
+        kind="info",
         scope=SCOPE_MODERATION,
         guild=guild,
     )
-    embed.add_field(name="Open Cases", value=str(len(active_list)), inline=True)
-    embed.add_field(name="Generated", value=discord.utils.format_dt(now, "R"), inline=True)
+    if total == 0:
+        embed.description = "> No moderation cases have been recorded yet."
+        return embed
 
-    type_counter = Counter(record.get("type", "unknown") for _, record, _, _, _ in active_list)
+    embed.add_field(name="Total Cases", value=str(total), inline=True)
     breakdown = join_lines([
-        f"Bans: {type_counter.get('ban', 0)}",
-        f"Timeouts: {type_counter.get('timeout', 0)}",
+        f"Bans: {counts.get('ban', 0)}",
+        f"Timeouts: {counts.get('timeout', 0)}",
+        f"Warns: {counts.get('warn', 0)}",
+        f"Kicks: {counts.get('kick', 0)}",
+        f"Softbans: {counts.get('softban', 0)}",
     ])
     embed.add_field(name="Breakdown", value=breakdown, inline=True)
+    embed.add_field(name="Page", value=f"{page + 1}/{max_pages}", inline=True)
 
-    for uid, record, expiry, _, name in active_list[:display_limit]:
-        expiry_text = "Never" if record.get("duration_minutes") == -1 else discord.utils.format_dt(expiry, "R")
-        embed.add_field(
-            name=f"{get_case_label(record)} • {name}",
-            value=join_lines([
-                f"User: <@{uid}>",
-                f"Action: {describe_punishment_record(record)}",
-                f"Reason: {truncate_text(record.get('reason', 'Unknown'), 100)}",
-                f"Expires: {expiry_text}",
-            ]),
-            inline=False,
+    lines = []
+    for user_id, record in page_items:
+        lines.append(
+            f"**{get_case_label(record)}** • <@{user_id}> — {describe_punishment_record(record)} — {format_case_status(record)}\n"
+            f"> {truncate_text(record.get('reason', 'Unknown'), 80)}"
         )
-
-    if len(active_list) > display_limit:
-        embed.set_footer(text=f"{BRAND_NAME} • Showing {display_limit} of {len(active_list)} active cases")
+    if lines:
+        embed.description = f"{embed.description}\n\n" + truncate_text("\n".join(lines), 3800)
     return embed
 
 
@@ -703,8 +709,8 @@ def build_mod_help_embed(guild: discord.Guild) -> discord.Embed:
         name="Case Management",
         value="\n".join([
             "`/case` — Open a case panel for notes, status, evidence, and assignment.",
+            "`/cases` — Browse every case on the server in case order.",
             "`/history` — Browse a user’s disciplinary record case-by-case.",
-            "`/active` — View all active bans and timeouts.",
             "`/undo` — Reverse a punishment with a reason and case selector.",
         ]),
         inline=False,

@@ -27,8 +27,6 @@ from core.utils import now_iso, parse_duration_str
 from .shared import (
     format_duration,
     panel_container,
-    format_log_quote,
-    format_reason_value,
     format_user_ref,
     make_action_log_embed,
     make_confirmation_embed,
@@ -41,6 +39,7 @@ from .shared import (
     truncate_text,
 )
 from .cases import (
+    build_all_cases_embed,
     build_case_detail_embed,
     describe_punishment_record,
     format_case_status,
@@ -470,79 +469,107 @@ class RuleEditModal(discord.ui.Modal, title="Add/Edit Punishment Rule"):
         
         await interaction.response.send_message(embed=make_embed("Rule Saved", f"> Rule **{name}** saved successfully.", kind="success", scope=SCOPE_SYSTEM, guild=interaction.guild), ephemeral=True)
 
-class ActiveSelect(discord.ui.Select):
-    def __init__(self, active_list):
-        self.active_list = active_list
+class AllCasesSelect(discord.ui.Select):
+    def __init__(self, page_items):
+        self.page_items = page_items
         options = []
-        for idx, (uid, rec, expiry, case_num, name) in enumerate(active_list[:25]):
-            reason = rec.get("reason", "Unknown")
-            label = f"{name} ({get_case_label(rec, case_num)})"
-            if len(label) > 100: label = label[:100]
-            
-            dur = rec.get("duration_minutes", 0)
-            p_type = rec.get("type", "timeout")
-            
-            if dur == -1:
-                desc = f"Banned • {reason}"
-            elif dur > 0:
-                remaining = expiry - discord.utils.utcnow()
-                if remaining.days > 0:
-                    rem_str = f"{remaining.days}d"
-                else:
-                    hours = remaining.seconds // 3600
-                    if hours > 0:
-                        rem_str = f"{hours}h"
-                    else:
-                        rem_str = f"{remaining.seconds // 60}m"
-                desc = f"{'Tempban' if p_type=='ban' else 'Timeout'} • Expires in {rem_str}"
-            
-            if len(desc) > 100: desc = desc[:97] + "..."
-            options.append(discord.SelectOption(label=label, description=desc, value=str(idx)))
-            
-        super().__init__(placeholder="Select active punishment to view details...", min_values=1, max_values=1, options=options)
+        for user_id, record in page_items[:25]:
+            case_id = record.get("case_id")
+            if not isinstance(case_id, int):
+                continue
+            name = str(record.get("target_name") or user_id)
+            label = f"{get_case_label(record)} • {name}"
+            if len(label) > 100:
+                label = label[:100]
+            desc = truncate_text(f"{describe_punishment_record(record)} • {record.get('reason', 'Unknown')}", 100)
+            options.append(discord.SelectOption(label=label, description=desc, value=str(case_id)))
+        if not options:
+            options = [discord.SelectOption(label="No cases", value="none")]
+        super().__init__(placeholder="Select a case to open its panel...", min_values=1, max_values=1, options=options)
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        idx = int(self.values[0])
-        uid, rec, expiry, case_num, name = self.active_list[idx]
+        if self.values[0] == "none":
+            await interaction.response.defer()
+            return
+        case_id = int(self.values[0])
+        user_id, record = bot.data_manager.get_case(case_id)
+        if not record or not user_id:
+            await respond_with_error(interaction, "That case could not be loaded — it may have been cleared.", scope=SCOPE_MODERATION)
+            return
+        target_user = interaction.guild.get_member(int(user_id)) if interaction.guild else None
+        panel = CasePanelView(user_id, [case_id], target_user=target_user)
+        await interaction.response.send_message(embed=panel.build_embed(), view=panel, ephemeral=True)
+        panel.message = await interaction.original_response()
 
-        embed = make_embed(
-            f"{get_case_label(rec, case_num)} Active Details",
-            "> Current punishment state, timing, and staff notes.",
-            kind="danger",
-            scope=SCOPE_MODERATION,
-            guild=interaction.guild,
+
+class AllCasesNavButton(discord.ui.Button):
+    def __init__(self, label: str, delta: int, *, disabled: bool = False):
+        super().__init__(label=label, style=discord.ButtonStyle.primary, disabled=disabled, row=1)
+        self.delta = delta
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        view: "AllCasesView" = self.view
+        view.page = max(0, min(view.page + self.delta, view.max_pages - 1))
+        view.update_components()
+        await interaction.response.edit_message(embed=view.build_embed(), view=view)
+
+
+class AllCasesRefreshButton(discord.ui.Button):
+    def __init__(self):
+        super().__init__(label="Refresh", style=discord.ButtonStyle.secondary, row=2)
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        view: "AllCasesView" = self.view
+        view.reload()
+        await interaction.response.edit_message(embed=view.build_embed(), view=view)
+
+
+class AllCasesView(discord.ui.View):
+    def __init__(self, guild: discord.Guild):
+        super().__init__(timeout=300)
+        self.guild = guild
+        self.page = 0
+        self.items_per_page = 20
+        self.message: Optional[discord.Message] = None
+        self.cases: List = []
+        self.counts: dict = {}
+        self.max_pages = 1
+        self.reload()
+
+    def reload(self) -> None:
+        self.cases = bot.data_manager.get_all_cases()
+        self.counts = {}
+        for _, record in self.cases:
+            t = record.get("type", "unknown")
+            self.counts[t] = self.counts.get(t, 0) + 1
+        self.max_pages = max(1, (len(self.cases) + self.items_per_page - 1) // self.items_per_page)
+        self.page = max(0, min(self.page, self.max_pages - 1))
+        self.update_components()
+
+    def get_page_items(self) -> List:
+        start = self.page * self.items_per_page
+        return self.cases[start:start + self.items_per_page]
+
+    def build_embed(self) -> discord.Embed:
+        return build_all_cases_embed(
+            self.guild,
+            self.get_page_items(),
+            page=self.page,
+            max_pages=self.max_pages,
+            total=len(self.cases),
+            counts=self.counts,
         )
 
-        embed.add_field(name="User", value=f"<@{uid}> (`{uid}`)", inline=True)
-
-        mod_id = rec.get("moderator")
-        embed.add_field(name="Moderator", value=f"<@{mod_id}> (`{mod_id}`)", inline=True)
-        embed.add_field(name="Action", value=describe_punishment_record(rec), inline=True)
-        embed.add_field(name="Violation", value=format_reason_value(rec.get("reason", "Unknown"), limit=250), inline=False)
-
-        dur = rec.get("duration_minutes")
-        if dur == -1:
-            exp_str = "Never"
-        else:
-            exp_str = discord.utils.format_dt(expiry, "F")
-        embed.add_field(name="Expires", value=exp_str, inline=True)
-        if rec.get("escalated", False):
-            embed.add_field(name="Escalated", value="Yes", inline=True)
-
-        note = truncate_text(str(rec.get("note") or "").strip(), 1000)
-        if note:
-            embed.add_field(name="Internal Note", value=format_log_quote(note, limit=1000), inline=False)
-
-        user_msg = rec.get("user_msg")
-        if user_msg:
-            embed.add_field(name="Message to User", value=format_log_quote(user_msg, limit=1000), inline=False)
-
-        await interaction.response.edit_message(embed=embed, view=self.view)
-
-class ActiveView(discord.ui.View):
-    def __init__(self, active_list):
-        super().__init__(timeout=180)
-        self.add_item(ActiveSelect(active_list))
+    def update_components(self) -> None:
+        self.clear_items()
+        page_items = self.get_page_items()
+        if page_items:
+            self.add_item(AllCasesSelect(page_items))
+        if self.max_pages > 1:
+            self.add_item(AllCasesNavButton("Previous", -1, disabled=(self.page == 0)))
+            self.add_item(discord.ui.Button(label=f"Page {self.page + 1}/{self.max_pages}", disabled=True, style=discord.ButtonStyle.secondary, row=1))
+            self.add_item(AllCasesNavButton("Next", 1, disabled=(self.page >= self.max_pages - 1)))
+        self.add_item(AllCasesRefreshButton())
 
 class AccessView(discord.ui.View):
     def __init__(self):
