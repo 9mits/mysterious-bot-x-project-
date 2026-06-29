@@ -41,10 +41,103 @@ from .cases import (
     build_mod_help_embed,
 )
 from .history import HistoryView
-from .case_panel import CasePanelView, FirstConfirmClear, ActiveView
+from .case_panel import CasePanelView, FirstConfirmClear, ActiveView, generate_transcript_html
 from .roles import AppealView, build_punish_embed
 
-async def execute_punishment(interaction, target, moderator, reason, minutes, note, user_msg, is_escalated, origin_message=None, punishment_type="auto", public=False):
+# ----------------- Message capture / purge helpers -----------------
+
+# Cap on how far back a single channel is scanned when looking up a user's recent
+# messages, and how many channels are scanned concurrently. Bounds the cost of the
+# server-wide sweep used by /punish purge & save_logs.
+_PER_CHANNEL_SCAN_FLOOR = 200
+_PER_CHANNEL_SCAN_CEIL = 1000
+_CHANNEL_SCAN_CONCURRENCY = 8
+
+
+async def _scan_channel_for_user(channel, me, user_id, per_channel_limit):
+    if not channel.permissions_for(me).read_message_history:
+        return []
+    found = []
+    try:
+        async for message in channel.history(limit=per_channel_limit):
+            if message.author.id == user_id:
+                found.append(message)
+    except (discord.Forbidden, discord.HTTPException):
+        return []
+    return found
+
+
+async def collect_user_messages(guild, user_id, limit):
+    """Best-effort: gather up to `limit` of a user's most recent messages across
+    every readable text channel, newest-first. Channels are scanned concurrently
+    (different rate-limit buckets) with a per-channel depth cap so the sweep stays
+    bounded on large servers."""
+    per_channel_limit = max(_PER_CHANNEL_SCAN_FLOOR, min(_PER_CHANNEL_SCAN_CEIL, limit * 4))
+    semaphore = asyncio.Semaphore(_CHANNEL_SCAN_CONCURRENCY)
+
+    async def _guarded(channel):
+        async with semaphore:
+            return await _scan_channel_for_user(channel, guild.me, user_id, per_channel_limit)
+
+    results = await asyncio.gather(*[_guarded(c) for c in guild.text_channels], return_exceptions=True)
+    messages = []
+    for result in results:
+        if isinstance(result, list):
+            messages.extend(result)
+    messages.sort(key=lambda m: m.created_at, reverse=True)
+    return messages[:limit]
+
+
+def build_user_transcript(messages, user) -> bytes:
+    """Render a list of discord.Message (newest-first) into a modmail-style HTML
+    transcript, reusing the shared renderer. Returns UTF-8 bytes."""
+    records = []
+    for message in messages:
+        records.append({
+            "author_name": message.author.display_name,
+            "author_avatar_url": message.author.display_avatar.url,
+            "created_at": message.created_at,
+            "content": message.content,
+            "attachments": [{"filename": a.filename, "url": a.url} for a in message.attachments],
+            "stickers": [s.name for s in message.stickers],
+            "channel_id": getattr(message.channel, "name", message.channel.id),
+            "deleted": False,
+            "edited": bool(message.edited_at),
+        })
+    return generate_transcript_html(records, user).encode("utf-8")
+
+
+async def delete_messages_efficiently(messages) -> int:
+    """Delete the given messages, grouped by channel: bulk-delete recent ones
+    (<14 days) in chunks of 100, individually delete the rest. Relies on
+    discord.py's HTTP layer for rate limiting (no fixed sleeps). Returns the
+    number deleted."""
+    cutoff = discord.utils.utcnow() - timedelta(days=14)
+    by_channel = {}
+    for message in messages:
+        by_channel.setdefault(message.channel.id, (message.channel, []))[1].append(message)
+
+    deleted = 0
+    for channel, channel_messages in by_channel.values():
+        recent = [m for m in channel_messages if m.created_at > cutoff]
+        old = [m for m in channel_messages if m.created_at <= cutoff]
+        for i in range(0, len(recent), 100):
+            chunk = recent[i:i + 100]
+            try:
+                await channel.delete_messages(chunk)
+                deleted += len(chunk)
+            except (discord.Forbidden, discord.HTTPException):
+                pass
+        for message in old:
+            try:
+                await message.delete()
+                deleted += 1
+            except (discord.Forbidden, discord.HTTPException):
+                pass
+    return deleted
+
+
+async def execute_punishment(interaction, target, moderator, reason, minutes, note, user_msg, is_escalated, origin_message=None, punishment_type="auto", public=False, purge_count=0, save_count=0):
     uid = str(target.id)
     history = bot.data_manager.punishments.get(uid, [])
     guild = interaction.guild
@@ -188,6 +281,54 @@ async def execute_punishment(interaction, target, moderator, reason, minutes, no
         thumbnail=target.display_avatar.url,
     )
 
+    # Optional: capture chat logs and/or purge the target's recent messages
+    # (server-wide). One sweep covers both; a purge always saves an evidence
+    # transcript to the mod log before deleting.
+    purge_deleted = 0
+    saved_count = 0
+    if purge_count or save_count:
+        needed = max(purge_count, save_count)
+        try:
+            recent_messages = await collect_user_messages(guild, target.id, needed)
+        except Exception:
+            recent_messages = []
+
+        if save_count and recent_messages:
+            captured = recent_messages[:save_count]
+            try:
+                data = build_user_transcript(captured, target)
+                capture_embed = make_embed(
+                    "Chat Log Captured",
+                    f"> Saved **{len(captured)}** recent message(s) from {format_user_ref(target)} (no deletion).",
+                    kind="info",
+                    scope=SCOPE_MODERATION,
+                    guild=guild,
+                    thumbnail=target.display_avatar.url,
+                )
+                capture_embed.add_field(name="Case", value=case_label, inline=True)
+                await send_punishment_log(guild, capture_embed, attachments=[(f"chatlog_{target.id}.html", data)])
+                saved_count = len(captured)
+            except Exception:
+                pass
+
+        if purge_count and recent_messages:
+            to_purge = recent_messages[:purge_count]
+            try:
+                data = build_user_transcript(to_purge, target)
+                evidence_embed = make_embed(
+                    "Purge Evidence",
+                    f"> Saved **{len(to_purge)}** message(s) from {format_user_ref(target)} before purging.",
+                    kind="warning",
+                    scope=SCOPE_MODERATION,
+                    guild=guild,
+                    thumbnail=target.display_avatar.url,
+                )
+                evidence_embed.add_field(name="Case", value=case_label, inline=True)
+                await send_punishment_log(guild, evidence_embed, attachments=[(f"purged_{target.id}.html", data)])
+            except Exception:
+                pass
+            purge_deleted = await delete_messages_efficiently(to_purge)
+
     # Response Embed (Private)
     response_embed = make_embed(
         "Action Successful",
@@ -202,6 +343,14 @@ async def execute_punishment(interaction, target, moderator, reason, minutes, no
     response_embed.add_field(name="Type", value=status, inline=True)
     if not is_warning:
         response_embed.add_field(name="Duration", value=format_duration(minutes), inline=True)
+    if purge_count or save_count:
+        parts = []
+        if save_count:
+            parts.append(f"Saved {saved_count} message(s) to the log")
+        if purge_count:
+            parts.append(f"Purged {purge_deleted} message(s)")
+        if parts:
+            response_embed.add_field(name="Message Actions", value="> " + "; ".join(parts), inline=False)
     
     if interaction.message:
         try:
@@ -245,7 +394,7 @@ async def execute_punishment(interaction, target, moderator, reason, minutes, no
 # ----------------- Embeds -----------------
 
 class PunishDetailsModal(discord.ui.Modal):
-    def __init__(self, target, moderator, reason, rules, origin_message=None, public=False, reaction_count=None):
+    def __init__(self, target, moderator, reason, rules, origin_message=None, public=False, reaction_count=None, purge_count=0, save_count=0):
         super().__init__(title=f"Punish: {target.display_name}")
         self.target = target
         self.moderator = moderator
@@ -254,6 +403,8 @@ class PunishDetailsModal(discord.ui.Modal):
         self.origin_message = origin_message
         self.public = public
         self.reaction_count = reaction_count
+        self.purge_count = purge_count
+        self.save_count = save_count
 
     mod_note = discord.ui.TextInput(
         label="Moderator Note (Internal)",
@@ -341,10 +492,10 @@ class PunishDetailsModal(discord.ui.Modal):
             }
             return
 
-        await execute_punishment(interaction, self.target, self.moderator, reason, minutes, note, user_msg, is_escalated, self.origin_message, punishment_type=punishment_type, public=self.public)
+        await execute_punishment(interaction, self.target, self.moderator, reason, minutes, note, user_msg, is_escalated, self.origin_message, punishment_type=punishment_type, public=self.public, purge_count=self.purge_count, save_count=self.save_count)
 
 class CustomPunishDetailsModal(discord.ui.Modal):
-    def __init__(self, target, moderator, p_type, origin_message, public=False, reaction_count=None):
+    def __init__(self, target, moderator, p_type, origin_message, public=False, reaction_count=None, purge_count=0, save_count=0):
         super().__init__(title=f"Configure {p_type.replace('_', ' ').title()}")
         self.target = target
         self.moderator = moderator
@@ -352,6 +503,8 @@ class CustomPunishDetailsModal(discord.ui.Modal):
         self.origin_message = origin_message
         self.public = public
         self.reaction_count = reaction_count
+        self.purge_count = purge_count
+        self.save_count = save_count
         
         self.custom_reason = discord.ui.TextInput(
             label="Reason",
@@ -467,16 +620,20 @@ class CustomPunishDetailsModal(discord.ui.Modal):
             False, # Custom punishments don't follow auto-escalation logic
             self.origin_message,
             punishment_type=final_type,
-            public=self.public
+            public=self.public,
+            purge_count=self.purge_count,
+            save_count=self.save_count,
         )
 
 class CustomTypeSelect(discord.ui.Select):
-    def __init__(self, target, moderator, origin_message, public=False, reaction_count=None):
+    def __init__(self, target, moderator, origin_message, public=False, reaction_count=None, purge_count=0, save_count=0):
         self.target = target
         self.moderator = moderator
         self.origin_message = origin_message
         self.public = public
         self.reaction_count = reaction_count
+        self.purge_count = purge_count
+        self.save_count = save_count
         options = [
             discord.SelectOption(label="Timeout", value="timeout", description="Mute user for a duration"),
             discord.SelectOption(label="Kick", value="kick", description="Remove user from server"),
@@ -489,19 +646,21 @@ class CustomTypeSelect(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         p_type = self.values[0]
-        await interaction.response.send_modal(CustomPunishDetailsModal(self.target, self.moderator, p_type, self.origin_message, public=self.public, reaction_count=self.reaction_count))
+        await interaction.response.send_modal(CustomPunishDetailsModal(self.target, self.moderator, p_type, self.origin_message, public=self.public, reaction_count=self.reaction_count, purge_count=self.purge_count, save_count=self.save_count))
 
 class CustomTypeView(discord.ui.View):
-    def __init__(self, target, moderator, origin_message, public=False, reaction_count=None):
+    def __init__(self, target, moderator, origin_message, public=False, reaction_count=None, purge_count=0, save_count=0):
         super().__init__(timeout=60)
-        self.add_item(CustomTypeSelect(target, moderator, origin_message, public=public, reaction_count=reaction_count))
+        self.add_item(CustomTypeSelect(target, moderator, origin_message, public=public, reaction_count=reaction_count, purge_count=purge_count, save_count=save_count))
 
 class PunishSelect(discord.ui.Select):
-    def __init__(self, target: discord.User, moderator: discord.Member, public=False, reaction_count=None):
+    def __init__(self, target: discord.User, moderator: discord.Member, public=False, reaction_count=None, purge_count=0, save_count=0):
         self.target = target
         self.moderator = moderator
         self.public = public
         self.reaction_count = reaction_count
+        self.purge_count = purge_count
+        self.save_count = save_count
         rules_config = bot.data_manager.config.get("punishment_rules", DEFAULT_RULES)
         options = []
         for reason, rules in rules_config.items():
@@ -517,22 +676,22 @@ class PunishSelect(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         if self.values[0] == "custom":
-            await interaction.response.send_message(embed=make_embed("Custom Punishment", "> Select the type of custom punishment below.", kind="info", scope=SCOPE_MODERATION, guild=interaction.guild), view=CustomTypeView(self.target, self.moderator, interaction.message, public=self.public, reaction_count=self.reaction_count), ephemeral=True)
+            await interaction.response.send_message(embed=make_embed("Custom Punishment", "> Select the type of custom punishment below.", kind="info", scope=SCOPE_MODERATION, guild=interaction.guild), view=CustomTypeView(self.target, self.moderator, interaction.message, public=self.public, reaction_count=self.reaction_count, purge_count=self.purge_count, save_count=self.save_count), ephemeral=True)
             return
         reason = self.values[0]
         rules_config = bot.data_manager.config.get("punishment_rules", DEFAULT_RULES)
         rules = rules_config.get(reason)
         if not rules:
             return
-        await interaction.response.send_modal(PunishDetailsModal(self.target, self.moderator, reason, rules, interaction.message, public=self.public, reaction_count=self.reaction_count))
+        await interaction.response.send_modal(PunishDetailsModal(self.target, self.moderator, reason, rules, interaction.message, public=self.public, reaction_count=self.reaction_count, purge_count=self.purge_count, save_count=self.save_count))
 
 
 class PunishView(discord.ui.View):
-    def __init__(self, target, moderator, public=False, reaction_count=None):
+    def __init__(self, target, moderator, public=False, reaction_count=None, purge_count=0, save_count=0):
         super().__init__(timeout=60)
         self.target = target
         self.moderator = moderator
-        self.add_item(PunishSelect(target, moderator, public=public, reaction_count=reaction_count))
+        self.add_item(PunishSelect(target, moderator, public=public, reaction_count=reaction_count, purge_count=purge_count, save_count=save_count))
 
     @discord.ui.button(label="Clear History", style=discord.ButtonStyle.danger, row=1)
     async def clear_history(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
@@ -610,10 +769,10 @@ class RevokeUndoView(discord.ui.View):
         button.label = "Undo Revoked"
         await interaction.edit_original_response(embed=embed, view=self)
 
-async def show_punish_menu(interaction: discord.Interaction, user: discord.User, public=False, reaction_count=None):
+async def show_punish_menu(interaction: discord.Interaction, user: discord.User, public=False, reaction_count=None, purge_count=0, save_count=0):
     await interaction.response.defer(ephemeral=True)
     embed = build_punish_embed(user)
-    view = PunishView(user, interaction.user, public=public, reaction_count=reaction_count)
+    view = PunishView(user, interaction.user, public=public, reaction_count=reaction_count, purge_count=purge_count, save_count=save_count)
     await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
 async def show_history_menu(
@@ -771,13 +930,15 @@ class ModerationTargetSelect(discord.ui.UserSelect):
 
 
 class ModerationTargetPickerView(discord.ui.View):
-    def __init__(self, *, requester_id: int, action: str, public: bool = False, initial_undo_reason: Optional[str] = None, reaction_count: Optional[int] = None):
+    def __init__(self, *, requester_id: int, action: str, public: bool = False, initial_undo_reason: Optional[str] = None, reaction_count: Optional[int] = None, purge_count: int = 0, save_count: int = 0):
         super().__init__(timeout=180)
         self.requester_id = requester_id
         self.action = action
         self.public = public
         self.initial_undo_reason = initial_undo_reason
         self.reaction_count = reaction_count
+        self.purge_count = purge_count
+        self.save_count = save_count
         self.add_item(ModerationTargetSelect(self))
         if action == "case":
             self.add_item(CaseIdButton())
@@ -794,7 +955,7 @@ class ModerationTargetPickerView(discord.ui.View):
             return
 
         if self.action == "punish":
-            await show_punish_menu(interaction, selected_user, public=self.public, reaction_count=self.reaction_count)
+            await show_punish_menu(interaction, selected_user, public=self.public, reaction_count=self.reaction_count, purge_count=self.purge_count, save_count=self.save_count)
             return
 
         member = await _resolve_selected_member(interaction, selected_user)
@@ -829,6 +990,8 @@ async def send_target_picker(
     public: bool = False,
     initial_undo_reason: Optional[str] = None,
     reaction_count: Optional[int] = None,
+    purge_count: int = 0,
+    save_count: int = 0,
 ) -> None:
     embed = make_embed(
         title,
@@ -845,6 +1008,8 @@ async def send_target_picker(
             public=public,
             initial_undo_reason=initial_undo_reason,
             reaction_count=reaction_count,
+            purge_count=purge_count,
+            save_count=save_count,
         ),
         ephemeral=True,
     )
@@ -855,16 +1020,25 @@ async def send_target_picker(
     user="The member to action.",
     user_id="A user ID or mention — use this if a member can't be found in the user: picker.",
     public="Send the result to this channel.",
+    purge="Delete this many of the user's most recent messages server-wide (an evidence transcript is saved to the mod log first).",
+    save_logs="Save this many of the user's recent messages to the mod log as an HTML transcript (nothing is deleted).",
 )
 @app_commands.check(_staff_check)
-async def punish(interaction: discord.Interaction, user: Optional[discord.User] = None, user_id: Optional[str] = None, public: bool = False):
+async def punish(
+    interaction: discord.Interaction,
+    user: Optional[discord.User] = None,
+    user_id: Optional[str] = None,
+    public: bool = False,
+    purge: app_commands.Range[int, 0, 500] = 0,
+    save_logs: app_commands.Range[int, 0, 500] = 0,
+):
     # `user_id` is a reliable fallback for the native user: picker, which (being
     # client-side) silently fails to select some real members in larger servers.
     if user is None and user_id:
         target = await _resolve_user_id_input(interaction, user_id)
         if target is None:
             return
-        await show_punish_menu(interaction, target, public=public)
+        await show_punish_menu(interaction, target, public=public, purge_count=purge, save_count=save_logs)
         return
 
     if user is None:
@@ -874,6 +1048,8 @@ async def punish(interaction: discord.Interaction, user: Optional[discord.User] 
             title="Choose a Target",
             description="> Select a member to open the moderation action panel.",
             public=public,
+            purge_count=purge,
+            save_count=save_logs,
         )
         return
     # The inline `user:` option can resolve to a bare discord.User (no guild
@@ -884,7 +1060,7 @@ async def punish(interaction: discord.Interaction, user: Optional[discord.User] 
         member = await resolve_member(interaction.guild, user.id)
         if member is not None:
             user = member
-    await show_punish_menu(interaction, user, public=public)
+    await show_punish_menu(interaction, user, public=public, purge_count=purge, save_count=save_logs)
 
 
 @tree.command(name="publicexecution", description="Put a member up for a community-vote punishment.")
@@ -993,16 +1169,30 @@ async def undo(interaction: discord.Interaction, user: Optional[discord.Member] 
 
 
 @tree.command(name="purge", description="Delete recent messages with optional filters.")
-@app_commands.describe(amount="Messages to scan or delete. Max 999.", user="Only delete messages from this user.", keyword="Only delete messages containing this text.")
+@app_commands.describe(
+    amount="Messages to scan or delete. Max 999.",
+    user="Only delete messages from this user.",
+    user_id="Only delete messages from this user ID — works even if they've left the server.",
+    keyword="Only delete messages containing this text.",
+)
 @app_commands.check(_staff_check)
-async def purge(interaction: discord.Interaction, amount: int, user: discord.Member = None, keyword: str = None):
+async def purge(interaction: discord.Interaction, amount: int, user: discord.Member = None, user_id: str = None, keyword: str = None):
     if amount < 1 or amount > 999:
         await interaction.response.send_message(embed=make_embed("Invalid Amount", "> Amount must be between 1 and 999.", kind="error", scope=SCOPE_MODERATION, guild=interaction.guild), ephemeral=True)
         return
 
+    # Resolve a single target id from either the member picker or a raw id/mention.
+    target_id = user.id if user else None
+    if user_id:
+        digits = "".join(ch for ch in user_id if ch.isdigit())
+        if not digits:
+            await interaction.response.send_message(embed=make_embed("Invalid User ID", "> That isn't a valid user ID or mention.", kind="error", scope=SCOPE_MODERATION, guild=interaction.guild), ephemeral=True)
+            return
+        target_id = int(digits)
+
     await interaction.response.defer(ephemeral=True)
 
-    if not user and not keyword:
+    if target_id is None and not keyword:
         try:
             deleted = await interaction.channel.purge(limit=amount)
             await interaction.followup.send(embed=make_embed("Messages Cleared", f"> Cleared **{len(deleted)}** messages.", kind="success", scope=SCOPE_MODERATION, guild=interaction.guild), ephemeral=True)
@@ -1022,51 +1212,31 @@ async def purge(interaction: discord.Interaction, amount: int, user: discord.Mem
             await interaction.followup.send(embed=make_embed("Failed to Purge", f"> Failed to purge: {e}", kind="error", scope=SCOPE_MODERATION, guild=interaction.guild), ephemeral=True)
         return
 
-    to_delete = []
-    manual_delete = []
-    deleted_count = 0
-
-    now = discord.utils.utcnow()
-    two_weeks_ago = now - timedelta(days=14)
-
+    # Filtered path: scan the channel once (stopping as soon as we have `amount`
+    # matches), then hand off to the shared bulk-delete helper.
+    keyword_lower = keyword.lower() if keyword else None
+    matched = []
     async for message in interaction.channel.history(limit=10000):
-        if deleted_count + len(to_delete) + len(manual_delete) >= amount:
+        if len(matched) >= amount:
             break
-
-        if user and message.author.id != user.id:
+        if target_id and message.author.id != target_id:
             continue
-        if keyword and keyword.lower() not in message.content.lower():
+        if keyword_lower and keyword_lower not in message.content.lower():
             continue
+        matched.append(message)
 
-        if message.created_at > two_weeks_ago:
-            to_delete.append(message)
-            if len(to_delete) >= 100:
-                try:
-                    await interaction.channel.delete_messages(to_delete)
-                    deleted_count += len(to_delete)
-                    to_delete = []
-                except Exception: pass
-        else:
-            manual_delete.append(message)
-
-    if to_delete:
-        try:
-            await interaction.channel.delete_messages(to_delete)
-            deleted_count += len(to_delete)
-        except Exception: pass
-
-    for m in manual_delete:
-        try:
-            await m.delete()
-            deleted_count += 1
-            await asyncio.sleep(1.2)
-        except Exception: pass
+    deleted_count = await delete_messages_efficiently(matched)
 
     if deleted_count == 0:
         await interaction.followup.send(embed=make_embed("No Messages Found", "> No matching messages found to purge.", kind="info", scope=SCOPE_MODERATION, guild=interaction.guild), ephemeral=True)
         return
 
-    target_str = user.mention if user else "Anyone"
+    if user:
+        target_str = user.mention
+    elif target_id:
+        target_str = f"<@{target_id}>"
+    else:
+        target_str = "Anyone"
     await interaction.followup.send(embed=make_embed("Messages Cleared", f"> Cleared **{deleted_count}** messages from {target_str}.", kind="success", scope=SCOPE_MODERATION, guild=interaction.guild), ephemeral=True)
 
     log_embed = make_embed(
