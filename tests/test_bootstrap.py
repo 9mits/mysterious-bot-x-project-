@@ -115,7 +115,7 @@ class MbxBootstrapTests(unittest.TestCase):
                 user_param = next(param for param in command.parameters if param.name == "user")
                 self.assertFalse(user_param.required)
             case_command = commands_by_name["case"]
-            self.assertFalse(next(param for param in case_command.parameters if param.name == "case_id").required)
+            self.assertFalse(next(param for param in case_command.parameters if param.name == "caseid").required)
             self.assertFalse(next(param for param in case_command.parameters if param.name == "user").required)
 
         asyncio.run(runner())

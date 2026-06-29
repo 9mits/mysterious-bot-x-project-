@@ -4,7 +4,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 import asyncio
-from datetime import datetime, timezone, timedelta
+from datetime import timedelta
 from typing import Optional, List, Union
 
 from core.constants import (
@@ -15,7 +15,7 @@ from core.services import (
     get_feature_flag,
 )
 from core.context import abuse_system, bot, tree
-from core.utils import iso_to_dt, now_iso, parse_duration_str
+from core.utils import now_iso, parse_duration_str
 from .shared import (
     format_duration,
     format_log_quote,
@@ -37,18 +37,17 @@ from .cases import (
     get_case_label,
     build_punishment_execution_log_embed,
     build_no_history_embed,
-    build_active_punishments_embed,
     build_mod_help_embed,
 )
 from .history import HistoryView
-from .case_panel import CasePanelView, FirstConfirmClear, ActiveView, generate_transcript_html
+from .case_panel import CasePanelView, FirstConfirmClear, AllCasesView, generate_transcript_html
 from .roles import AppealView, build_punish_embed
 
 # ----------------- Message capture / purge helpers -----------------
 
 # Cap on how far back a single channel is scanned when looking up a user's recent
 # messages, and how many channels are scanned concurrently. Bounds the cost of the
-# server-wide sweep used by /punish purge & save_logs.
+# server-wide sweep used by the punish panel's Purge Messages / Save Logs buttons.
 _PER_CHANNEL_SCAN_FLOOR = 200
 _PER_CHANNEL_SCAN_CEIL = 1000
 _CHANNEL_SCAN_CONCURRENCY = 8
@@ -654,13 +653,9 @@ class CustomTypeView(discord.ui.View):
         self.add_item(CustomTypeSelect(target, moderator, origin_message, public=public, reaction_count=reaction_count, purge_count=purge_count, save_count=save_count))
 
 class PunishSelect(discord.ui.Select):
-    def __init__(self, target: discord.User, moderator: discord.Member, public=False, reaction_count=None, purge_count=0, save_count=0):
+    def __init__(self, target: discord.User, moderator: discord.Member):
         self.target = target
         self.moderator = moderator
-        self.public = public
-        self.reaction_count = reaction_count
-        self.purge_count = purge_count
-        self.save_count = save_count
         rules_config = bot.data_manager.config.get("punishment_rules", DEFAULT_RULES)
         options = []
         for reason, rules in rules_config.items():
@@ -671,29 +666,120 @@ class PunishSelect(discord.ui.Select):
             else:
                 desc = f"Base: {base_str} • Repeat: {esc_str}"
             options.append(discord.SelectOption(label=reason, description=desc))
-        options.append(discord.SelectOption(label="Custom Punishment", value="custom", description="Define custom reason and duration"))
-        super().__init__(placeholder="Select a punishment reason...", min_values=1, max_values=1, options=options)
+        options.append(discord.SelectOption(label="Custom Punishment", value="custom", description="Define a custom reason and duration."))
+        super().__init__(placeholder="Select a punishment reason...", min_values=1, max_values=1, options=options, row=0)
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        # Read the current modifier state off the panel so the toggle buttons take effect.
+        view: "PunishView" = self.view
+        public = getattr(view, "public", False)
+        reaction_count = getattr(view, "reaction_count", None)
+        purge_count = getattr(view, "purge_count", 0)
+        save_count = getattr(view, "save_count", 0)
+
         if self.values[0] == "custom":
-            await interaction.response.send_message(embed=make_embed("Custom Punishment", "> Select the type of custom punishment below.", kind="info", scope=SCOPE_MODERATION, guild=interaction.guild), view=CustomTypeView(self.target, self.moderator, interaction.message, public=self.public, reaction_count=self.reaction_count, purge_count=self.purge_count, save_count=self.save_count), ephemeral=True)
+            await interaction.response.send_message(embed=make_embed("Custom Punishment", "> Select the type of custom punishment below.", kind="info", scope=SCOPE_MODERATION, guild=interaction.guild), view=CustomTypeView(self.target, self.moderator, interaction.message, public=public, reaction_count=reaction_count, purge_count=purge_count, save_count=save_count), ephemeral=True)
             return
         reason = self.values[0]
         rules_config = bot.data_manager.config.get("punishment_rules", DEFAULT_RULES)
         rules = rules_config.get(reason)
         if not rules:
             return
-        await interaction.response.send_modal(PunishDetailsModal(self.target, self.moderator, reason, rules, interaction.message, public=self.public, reaction_count=self.reaction_count, purge_count=self.purge_count, save_count=self.save_count))
+        await interaction.response.send_modal(PunishDetailsModal(self.target, self.moderator, reason, rules, interaction.message, public=public, reaction_count=reaction_count, purge_count=purge_count, save_count=save_count))
+
+
+class PunishCountModal(discord.ui.Modal):
+    """Popup launched by the Purge / Save Logs buttons to set how many of the
+    target's recent messages to act on."""
+    def __init__(self, parent_view: "PunishView", kind: str):
+        super().__init__(title="Purge Messages" if kind == "purge" else "Save Chat Logs")
+        self.parent_view = parent_view
+        self.kind = kind
+        current = parent_view.purge_count if kind == "purge" else parent_view.save_count
+        action = "delete" if kind == "purge" else "save to the mod log"
+        self.count_input = discord.ui.TextInput(
+            label="How many recent messages?",
+            placeholder=f"0–500. How many to {action}. 0 turns it off.",
+            default=str(current) if current else "",
+            required=False,
+            max_length=3,
+        )
+        self.add_item(self.count_input)
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        digits = "".join(ch for ch in self.count_input.value if ch.isdigit())
+        value = max(0, min(500, int(digits))) if digits else 0
+        if self.kind == "purge":
+            self.parent_view.purge_count = value
+        else:
+            self.parent_view.save_count = value
+        self.parent_view.sync_modifier_buttons()
+        await interaction.response.edit_message(view=self.parent_view)
+
+
+class PunishPublicToggle(discord.ui.Button):
+    def __init__(self):
+        super().__init__(label="Post to Channel: Off", style=discord.ButtonStyle.secondary, row=1)
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        view: "PunishView" = self.view
+        view.public = not view.public
+        view.sync_modifier_buttons()
+        await interaction.response.edit_message(view=view)
+
+
+class PunishPurgeButton(discord.ui.Button):
+    def __init__(self):
+        super().__init__(label="Purge Messages", style=discord.ButtonStyle.secondary, row=1)
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        await interaction.response.send_modal(PunishCountModal(self.view, "purge"))
+
+
+class PunishSaveButton(discord.ui.Button):
+    def __init__(self):
+        super().__init__(label="Save Logs", style=discord.ButtonStyle.secondary, row=1)
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        await interaction.response.send_modal(PunishCountModal(self.view, "save"))
 
 
 class PunishView(discord.ui.View):
     def __init__(self, target, moderator, public=False, reaction_count=None, purge_count=0, save_count=0):
-        super().__init__(timeout=60)
+        super().__init__(timeout=120)
         self.target = target
         self.moderator = moderator
-        self.add_item(PunishSelect(target, moderator, public=public, reaction_count=reaction_count, purge_count=purge_count, save_count=save_count))
+        self.public = public
+        self.reaction_count = reaction_count
+        self.purge_count = purge_count
+        self.save_count = save_count
+        self.public_btn = None
+        self.purge_btn = None
+        self.save_btn = None
+        self.add_item(PunishSelect(target, moderator))
+        # The post-to-channel / purge / save-logs toggles only apply to a direct
+        # punishment, not a public-execution vote, so hide them in that mode.
+        if reaction_count is None:
+            self.public_btn = PunishPublicToggle()
+            self.purge_btn = PunishPurgeButton()
+            self.save_btn = PunishSaveButton()
+            self.add_item(self.public_btn)
+            self.add_item(self.purge_btn)
+            self.add_item(self.save_btn)
+            self.sync_modifier_buttons()
 
-    @discord.ui.button(label="Clear History", style=discord.ButtonStyle.danger, row=1)
+    def sync_modifier_buttons(self) -> None:
+        if self.public_btn is not None:
+            self.public_btn.label = f"Post to Channel: {'On' if self.public else 'Off'}"
+            self.public_btn.style = discord.ButtonStyle.success if self.public else discord.ButtonStyle.secondary
+        if self.purge_btn is not None:
+            self.purge_btn.label = f"Purge Messages: {self.purge_count}" if self.purge_count else "Purge Messages"
+            self.purge_btn.style = discord.ButtonStyle.danger if self.purge_count else discord.ButtonStyle.secondary
+        if self.save_btn is not None:
+            self.save_btn.label = f"Save Logs: {self.save_count}" if self.save_count else "Save Logs"
+            self.save_btn.style = discord.ButtonStyle.primary if self.save_count else discord.ButtonStyle.secondary
+
+    @discord.ui.button(label="Clear History", style=discord.ButtonStyle.danger, row=2)
     async def clear_history(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         await interaction.response.send_message(
             embed=make_embed("Confirm Clear", "> Are you sure you want to clear this user's punishment history?", kind="warning", scope=SCOPE_MODERATION, guild=interaction.guild),
@@ -701,7 +787,7 @@ class PunishView(discord.ui.View):
             ephemeral=True
         )
 
-    @discord.ui.button(label="View History", style=discord.ButtonStyle.secondary, row=1)
+    @discord.ui.button(label="View History", style=discord.ButtonStyle.secondary, row=2)
     async def view_history(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         member = self.target if isinstance(self.target, discord.Member) else await resolve_member(interaction.guild, self.target.id)
         if not member:
@@ -769,10 +855,10 @@ class RevokeUndoView(discord.ui.View):
         button.label = "Undo Revoked"
         await interaction.edit_original_response(embed=embed, view=self)
 
-async def show_punish_menu(interaction: discord.Interaction, user: discord.User, public=False, reaction_count=None, purge_count=0, save_count=0):
+async def show_punish_menu(interaction: discord.Interaction, user: discord.User, reaction_count=None):
     await interaction.response.defer(ephemeral=True)
     embed = build_punish_embed(user)
-    view = PunishView(user, interaction.user, public=public, reaction_count=reaction_count, purge_count=purge_count, save_count=save_count)
+    view = PunishView(user, interaction.user, reaction_count=reaction_count)
     await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
 async def show_history_menu(
@@ -930,15 +1016,12 @@ class ModerationTargetSelect(discord.ui.UserSelect):
 
 
 class ModerationTargetPickerView(discord.ui.View):
-    def __init__(self, *, requester_id: int, action: str, public: bool = False, initial_undo_reason: Optional[str] = None, reaction_count: Optional[int] = None, purge_count: int = 0, save_count: int = 0):
+    def __init__(self, *, requester_id: int, action: str, initial_undo_reason: Optional[str] = None, reaction_count: Optional[int] = None):
         super().__init__(timeout=180)
         self.requester_id = requester_id
         self.action = action
-        self.public = public
         self.initial_undo_reason = initial_undo_reason
         self.reaction_count = reaction_count
-        self.purge_count = purge_count
-        self.save_count = save_count
         self.add_item(ModerationTargetSelect(self))
         if action == "case":
             self.add_item(CaseIdButton())
@@ -955,7 +1038,7 @@ class ModerationTargetPickerView(discord.ui.View):
             return
 
         if self.action == "punish":
-            await show_punish_menu(interaction, selected_user, public=self.public, reaction_count=self.reaction_count, purge_count=self.purge_count, save_count=self.save_count)
+            await show_punish_menu(interaction, selected_user, reaction_count=self.reaction_count)
             return
 
         member = await _resolve_selected_member(interaction, selected_user)
@@ -987,11 +1070,8 @@ async def send_target_picker(
     action: str,
     title: str,
     description: str,
-    public: bool = False,
     initial_undo_reason: Optional[str] = None,
     reaction_count: Optional[int] = None,
-    purge_count: int = 0,
-    save_count: int = 0,
 ) -> None:
     embed = make_embed(
         title,
@@ -1005,40 +1085,32 @@ async def send_target_picker(
         view=ModerationTargetPickerView(
             requester_id=interaction.user.id,
             action=action,
-            public=public,
             initial_undo_reason=initial_undo_reason,
             reaction_count=reaction_count,
-            purge_count=purge_count,
-            save_count=save_count,
         ),
         ephemeral=True,
     )
 
 
-@tree.command(name="punish", description="Open the moderation action panel.")
+@tree.command(name="punish", description="Open the punishment panel for a member.")
 @app_commands.describe(
-    user="The member to action.",
-    user_id="A user ID or mention — use this if a member can't be found in the user: picker.",
-    public="Send the result to this channel.",
-    purge="Delete this many of the user's most recent messages server-wide (an evidence transcript is saved to the mod log first).",
-    save_logs="Save this many of the user's recent messages to the mod log as an HTML transcript (nothing is deleted).",
+    user="The member to punish.",
+    userid="A user ID or mention. Use this if the member isn't selectable in the user picker.",
 )
 @app_commands.check(_staff_check)
 async def punish(
     interaction: discord.Interaction,
     user: Optional[discord.User] = None,
-    user_id: Optional[str] = None,
-    public: bool = False,
-    purge: app_commands.Range[int, 0, 500] = 0,
-    save_logs: app_commands.Range[int, 0, 500] = 0,
+    userid: Optional[str] = None,
 ):
-    # `user_id` is a reliable fallback for the native user: picker, which (being
+    # `userid` is a reliable fallback for the native user picker, which (being
     # client-side) silently fails to select some real members in larger servers.
-    if user is None and user_id:
-        target = await _resolve_user_id_input(interaction, user_id)
+    # Post-to-channel, purge, and save-logs are toggles on the panel itself.
+    if user is None and userid:
+        target = await _resolve_user_id_input(interaction, userid)
         if target is None:
             return
-        await show_punish_menu(interaction, target, public=public, purge_count=purge, save_count=save_logs)
+        await show_punish_menu(interaction, target)
         return
 
     if user is None:
@@ -1046,10 +1118,7 @@ async def punish(
             interaction,
             action="punish",
             title="Choose a Target",
-            description="> Select a member to open the moderation action panel.",
-            public=public,
-            purge_count=purge,
-            save_count=save_logs,
+            description="> Select a member to open the punishment panel.",
         )
         return
     # The inline `user:` option can resolve to a bare discord.User (no guild
@@ -1060,27 +1129,27 @@ async def punish(
         member = await resolve_member(interaction.guild, user.id)
         if member is not None:
             user = member
-    await show_punish_menu(interaction, user, public=public, purge_count=purge, save_count=save_logs)
+    await show_punish_menu(interaction, user)
 
 
 @tree.command(name="publicexecution", description="Put a member up for a community-vote punishment.")
 @app_commands.describe(
-    user="The member to put up for execution.",
-    reactions="How many reactions trigger the punishment (includes the bot's own). Default 5.",
-    user_id="A user ID or mention — use this if a member can't be found in the user: picker.",
+    user="The member to put up for the vote.",
+    reactions="How many reactions trigger the punishment. Includes the bot's own. Default 5.",
+    userid="A user ID or mention. Use this if the member isn't selectable in the user picker.",
 )
 @app_commands.check(_staff_check)
 async def publicexecution(
     interaction: discord.Interaction,
     user: Optional[discord.User] = None,
     reactions: app_commands.Range[int, 2, 100] = 5,
-    user_id: Optional[str] = None,
+    userid: Optional[str] = None,
 ):
     # Same target-selection flow as /punish, but the chosen punishment is held
     # until `reactions` ✅ reactions land on a public embed (see PunishDetailsModal
     # / CustomPunishDetailsModal, counted in cogs/events.py:on_raw_reaction_add).
-    if user is None and user_id:
-        target = await _resolve_user_id_input(interaction, user_id)
+    if user is None and userid:
+        target = await _resolve_user_id_input(interaction, userid)
         if target is None:
             return
         await show_punish_menu(interaction, target, reaction_count=reactions)
@@ -1103,7 +1172,8 @@ async def publicexecution(
     await show_punish_menu(interaction, user, reaction_count=reactions)
 
 
-@tree.command(name="history", description="View a user's moderation history.")
+@tree.command(name="history", description="View a member's moderation history.")
+@app_commands.describe(user="The member whose history to view.")
 @app_commands.check(_staff_check)
 async def history(interaction: discord.Interaction, user: Optional[discord.Member] = None):
     if user is None:
@@ -1117,43 +1187,31 @@ async def history(interaction: discord.Interaction, user: Optional[discord.Membe
     await show_history_menu(interaction, user)
 
 
-@tree.command(name="active", description="View active bans and timeouts.")
+@tree.command(name="cases", description="Browse every moderation case on the server in case order.")
 @app_commands.check(_staff_check)
-async def active(interaction: discord.Interaction):
+async def cases(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
-    now = discord.utils.utcnow()
-    active_list = []
-    for uid, records in bot.data_manager.punishments.items():
-        for i, rec in enumerate(records):
-            dur = rec.get("duration_minutes", 0)
-            p_type = rec.get("type", "timeout")
-            if p_type == "ban" and not rec.get("active", True):
-                continue
-            if dur == 0: continue
-            ts_str = rec.get("timestamp")
-            ts = iso_to_dt(ts_str)
-            if not ts: continue
-
-            if dur == -1:
-                expiry = datetime.max.replace(tzinfo=timezone.utc)
-            elif dur > 0:
-                expiry = ts + timedelta(minutes=dur)
-
-            if dur == -1 or expiry > now:
-                member = interaction.guild.get_member(int(uid))
-                name = member.display_name if member else uid
-                active_list.append((uid, rec, expiry, i+1, name))
-    if not active_list:
-        await interaction.followup.send(embed=make_embed("No Active Punishments", "> No active punishments found.", kind="info", scope=SCOPE_MODERATION, guild=interaction.guild), ephemeral=True)
+    view = AllCasesView(interaction.guild)
+    if not view.cases:
+        await interaction.followup.send(
+            embed=make_empty_state_embed(
+                "No Cases",
+                "> No moderation cases have been recorded yet.",
+                scope=SCOPE_MODERATION,
+                guild=interaction.guild,
+            ),
+            ephemeral=True,
+        )
         return
-    active_list.sort(key=lambda x: x[2])
-    embed = build_active_punishments_embed(interaction.guild, active_list, now)
-    view = ActiveView(active_list)
-    await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+    message = await interaction.followup.send(embed=view.build_embed(), view=view, ephemeral=True, wait=True)
+    view.message = message
 
 
 @tree.command(name="undo", description="Reverse a logged moderation action.")
-@app_commands.describe(reason="Reason to prefill in the undo panel.")
+@app_commands.describe(
+    user="The member whose action to reverse.",
+    reason="Reason to prefill in the undo panel.",
+)
 @app_commands.check(_staff_check)
 async def undo(interaction: discord.Interaction, user: Optional[discord.Member] = None, reason: Optional[str] = None):
     if user is None:
@@ -1168,23 +1226,23 @@ async def undo(interaction: discord.Interaction, user: Optional[discord.Member] 
     await show_history_menu(interaction, user, mode="undo", initial_undo_reason=reason)
 
 
-@tree.command(name="purge", description="Delete recent messages with optional filters.")
+@tree.command(name="purge", description="Bulk-delete recent messages, with optional filters.")
 @app_commands.describe(
-    amount="Messages to scan or delete. Max 999.",
-    user="Only delete messages from this user.",
-    user_id="Only delete messages from this user ID — works even if they've left the server.",
+    amount="How many messages to scan or delete. Max 999.",
+    user="Only delete messages from this member.",
+    userid="Only delete messages from this user ID. Works even if they've left the server.",
     keyword="Only delete messages containing this text.",
 )
 @app_commands.check(_staff_check)
-async def purge(interaction: discord.Interaction, amount: int, user: discord.Member = None, user_id: str = None, keyword: str = None):
+async def purge(interaction: discord.Interaction, amount: int, user: discord.Member = None, userid: str = None, keyword: str = None):
     if amount < 1 or amount > 999:
         await interaction.response.send_message(embed=make_embed("Invalid Amount", "> Amount must be between 1 and 999.", kind="error", scope=SCOPE_MODERATION, guild=interaction.guild), ephemeral=True)
         return
 
     # Resolve a single target id from either the member picker or a raw id/mention.
     target_id = user.id if user else None
-    if user_id:
-        digits = "".join(ch for ch in user_id if ch.isdigit())
+    if userid:
+        digits = "".join(ch for ch in userid if ch.isdigit())
         if not digits:
             await interaction.response.send_message(embed=make_embed("Invalid User ID", "> That isn't a valid user ID or mention.", kind="error", scope=SCOPE_MODERATION, guild=interaction.guild), ephemeral=True)
             return
@@ -1254,7 +1312,7 @@ async def purge(interaction: discord.Interaction, amount: int, user: discord.Mem
     await send_punishment_log(interaction.guild, log_embed)
 
 
-@tree.command(name="lock", description="Lock the current channel.")
+@tree.command(name="lock", description="Lock the current channel so members can't send messages.")
 @app_commands.check(_staff_check)
 async def lock(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
@@ -1280,7 +1338,7 @@ async def lock(interaction: discord.Interaction):
         await interaction.followup.send(embed=make_embed("Error", f"> Error: {e}", kind="error", scope=SCOPE_MODERATION, guild=interaction.guild), ephemeral=True)
 
 
-@tree.command(name="unlock", description="Unlock the current channel.")
+@tree.command(name="unlock", description="Unlock the current channel and restore messaging.")
 @app_commands.check(_staff_check)
 async def unlock(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
@@ -1311,11 +1369,14 @@ async def mod_help(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
-@tree.command(name="case", description="Open a moderation case.")
-@app_commands.describe(case_id="Case ID to open.", user="User whose latest case should open.")
+@tree.command(name="case", description="Open a specific moderation case.")
+@app_commands.describe(
+    caseid="The case ID to open.",
+    user="The member whose latest case to open.",
+)
 @app_commands.check(_staff_check)
-async def case(interaction: discord.Interaction, case_id: Optional[app_commands.Range[int, 1, 999999]] = None, user: Optional[discord.Member] = None):
-    if case_id is None and user is None:
+async def case(interaction: discord.Interaction, caseid: Optional[app_commands.Range[int, 1, 999999]] = None, user: Optional[discord.Member] = None):
+    if caseid is None and user is None:
         await send_target_picker(
             interaction,
             action="case",
@@ -1323,7 +1384,7 @@ async def case(interaction: discord.Interaction, case_id: Optional[app_commands.
             description="> Select a member to open their latest case, or open a specific case by ID.",
         )
         return
-    await show_case_panel(interaction, case_id=case_id, user=user)
+    await show_case_panel(interaction, case_id=caseid, user=user)
 
 
 @tree.context_menu(name="Punish")
@@ -1353,7 +1414,7 @@ async def setup(bot):
     bot.tree.add_command(punish)
     bot.tree.add_command(publicexecution)
     bot.tree.add_command(history)
-    bot.tree.add_command(active)
+    bot.tree.add_command(cases)
     bot.tree.add_command(undo)
     bot.tree.add_command(purge)
     bot.tree.add_command(lock)
